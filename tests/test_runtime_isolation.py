@@ -222,6 +222,22 @@ def test_async_waba_client_enables_signature_validation(monkeypatch):
     assert captured["phone_id"] == 123
 
 
+def test_sync_waba_client_uses_waba_account_id(monkeypatch):
+    captured = {}
+
+    class FakeWhatsAppSync:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.setattr(
+        "restaurant_agent_core.config.waba_setting.WhatsAppSync", FakeWhatsAppSync
+    )
+    settings = WabaBusinessSettings.for_namespace("bnat", _waba_values("bnat"))
+    settings.create_sync_client()
+
+    assert captured["business_account_id"] == "account"
+
+
 def test_app_packages_do_not_import_each_other_or_global_wa_clients():
     repo_root = Path(__file__).resolve().parents[1]
     sfcs_source = "\n".join(

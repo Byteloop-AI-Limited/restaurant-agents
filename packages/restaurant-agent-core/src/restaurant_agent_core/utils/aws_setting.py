@@ -1,17 +1,18 @@
 """
-AWS settings configuration for S3, Secrets Manager, and Lambda compatibility.
-  . Depends on: os, boto3, botocore.exceptions, pydantic_settings.BaseSettings, SettingsConfigDict, functools.lru_cache, json
-  . Defines AwsSettings for managing AWS credentials and config
-  . Provides secrets_client property for secretsmanager using boto3
-  . Detects AWS Lambda environment and uses default credentials/session if running on Lambda
-  . Loads ordelo_agent_env from secrets manager or environment depending on context
+Load shared application configuration from AWS Secrets Manager.
+  . Uses AWS_SETTINGS_* credentials outside Lambda
+  . Uses the Lambda execution role and AWS_REGION inside Lambda
+  . Resolves explicit secret names before environment-specific defaults
+  . Parses SecretString as JSON and fails fast when loading is unsuccessful
 Functions/Classes
   . AwsSettings
     . secrets_client (property)
     . get_secret
   . is_running_on_lambda
   . get_secrets_client
-  . ordelo_agent_env (dict)
+  . get_agent_env
+Module Values
+  . agent_env
 """
 
 # %%
@@ -73,11 +74,11 @@ def get_secrets_client():
         return aws_settings.secrets_client
 
 
-def get_ordelo_agent_env(secret_name: str | None = None) -> dict:
-    """Fetch and parse the secret string for ordelo_agent_env."""
+def get_agent_env(secret_name: str | None = None) -> dict:
+    """Fetch and parse the application secret string."""
     client = get_secrets_client()
     # Use provided secret_name, or try to get from AwsSettings/environment
-    if secret_name:
+    if secret_name is not None:
         use_secret_name = secret_name
     elif not is_running_on_lambda():
         use_secret_name = AwsSettings().secret_name
@@ -99,7 +100,7 @@ def get_ordelo_agent_env(secret_name: str | None = None) -> dict:
 
 # Secret name is resolved from AWS_SETTINGS_SECRET_NAME (via AwsSettings) so it
 # is configurable per environment. Fail fast with a clear error if it is empty.
-agent_env = get_ordelo_agent_env()
+agent_env = get_agent_env(secret_name="restaurant-agents-env")
 if not agent_env:
     raise RuntimeError(
         "Unable to load application settings from AWS Secrets Manager. "

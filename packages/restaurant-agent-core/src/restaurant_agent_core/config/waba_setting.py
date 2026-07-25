@@ -62,7 +62,7 @@ class WabaBusinessSettings(BaseSettings):
     def create_sync_client(self) -> WhatsAppSync:
         return WhatsAppSync(
             token=self.waa_token,
-            business_account_id=self.waa_business_account_id,
+            business_account_id=self.waa_account_id,
             verify_token=self.waa_verify_token,
             phone_id=self.waa_phone_id,
             app_id=self.waa_app_id,
