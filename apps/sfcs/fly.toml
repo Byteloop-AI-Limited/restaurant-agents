@@ -1,0 +1,41 @@
+app = "sfcs-agent"
+kill_signal = "SIGTERM"
+kill_timeout = "300s"
+primary_region = "lhr"
+
+[build]
+  dockerfile = "Dockerfile"
+
+  [build.args]
+    APP_PACKAGE = "sfcs-agent"
+
+[env]
+  APP_MODULE = "sfcs_agent.main:app"
+  GRACEFUL_TIMEOUT = "290"
+  HOST = "0.0.0.0"
+  KEEP_ALIVE = "5"
+  LOG_LEVEL = "info"
+  PORT = "8080"
+  TIMEOUT = "600"
+  WEB_CONCURRENCY = "1"
+  WORKER_CLASS = "uvicorn_worker.UvicornWorker"
+
+[http_service]
+  auto_start_machines = true
+  auto_stop_machines = "off"
+  force_https = true
+  internal_port = 8080
+
+  [[http_service.checks]]
+    interval = "15s"
+    timeout = "3s"
+    grace_period = "60s"
+    method = "GET"
+    path = "/healthz"
+
+[[vm]]
+  memory = "1gb"
+  size = "shared-cpu-1x"
+
+[[restart]]
+  policy = "on-failure"

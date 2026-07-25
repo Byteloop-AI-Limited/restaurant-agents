@@ -1,0 +1,1 @@
+"""Burger Nation restaurant application."""

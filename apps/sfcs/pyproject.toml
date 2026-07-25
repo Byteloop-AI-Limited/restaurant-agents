@@ -1,0 +1,13 @@
+[project]
+name = "sfcs-agent"
+version = "0.1.0"
+description = "Southern Fried Chicken Salisbury restaurant agent"
+requires-python = ">=3.13,<3.14"
+dependencies = ["restaurant-agent-core"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sfcs_agent"]

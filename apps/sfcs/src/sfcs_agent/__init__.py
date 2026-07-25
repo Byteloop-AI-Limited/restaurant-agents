@@ -1,0 +1,1 @@
+"""SFCS restaurant application."""
