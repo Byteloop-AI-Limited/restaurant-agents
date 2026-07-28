@@ -7,6 +7,6 @@ PRESENTATION = RestaurantPresentation(
     display_name="Burger Nation",
     logo_url=(
         "https://ordelo-restaurants.s3.eu-west-2.amazonaws.com/"
-        "bnat/bnat_logo.jpg"
+        "sfcs/SFC+Logo+-+Red+Horizontal.png"
     ),
 )

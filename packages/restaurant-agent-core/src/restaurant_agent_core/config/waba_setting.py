@@ -1,5 +1,5 @@
 """Namespaced WhatsApp Business configuration without process-global clients."""
-
+# %%
 import base64
 from typing import Any
 
@@ -9,6 +9,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from pywa import WhatsApp as WhatsAppSync
 from pywa_async import WhatsApp
 
+# %%
 
 class WabaBusinessSettings(BaseSettings):
     waa_account_id: str
@@ -85,3 +86,4 @@ class WabaBusinessSettings(BaseSettings):
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.waa_token}",
         }
+

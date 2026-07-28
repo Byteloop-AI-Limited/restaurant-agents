@@ -86,15 +86,15 @@ Start SFCS on localhost:
 ```bash
 uv run --package sfcs-agent uvicorn sfcs_agent.main:app \
   --host 127.0.0.1 \
-  --port 8000
+  --port 3101
 ```
-
+3101 -> http://rest-agent-test.ordelo.app
 Start Burger Nation on localhost:
 
 ```bash
 uv run --package bnat-agent uvicorn bnat_agent.main:app \
   --host 127.0.0.1 \
-  --port 3100
+  --port 3101
 ```
 
 Using different ports allows both applications to run simultaneously. Verify

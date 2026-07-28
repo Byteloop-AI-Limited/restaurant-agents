@@ -1,0 +1,4 @@
+interface:
+  display_name: "Verify WhatsApp App Change"
+  short_description: "Validate app changes through WhatsApp replies"
+  default_prompt: "Use $verify-whatsapp-app-change to run an end-to-end WhatsApp verification for the changed restaurant app."
