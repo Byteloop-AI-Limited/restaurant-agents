@@ -36,6 +36,18 @@ class FakeWaClient:
         self.sent.append(kwargs)
         return SimpleNamespace(id=f"{self.namespace}-message")
 
+    async def get_business_phone_number(self, *, phone_id):
+        assert phone_id == f"{self.namespace}-phone"
+        return SimpleNamespace(
+            display_phone_number=f"+44-{self.namespace}",
+            webhook_configuration={
+                "application": f"https://{self.namespace}-app.example.test/",
+                "whatsapp_business_account": (
+                    f"https://{self.namespace}-waba.example.test/"
+                ),
+            },
+        )
+
 
 class FakeGraphAdapter:
     def __init__(self, runtime):
@@ -65,7 +77,17 @@ def _settings(identity: RestaurantIdentity) -> RestaurantSettingsBundle:
         payment=SimpleNamespace(),
         maps=SimpleNamespace(),
         microservices=SimpleNamespace(),
-        waba=SimpleNamespace(namespace=identity.waba_namespace),
+        waba=SimpleNamespace(
+            namespace=identity.waba_namespace,
+            waa_account_id=f"{identity.waba_namespace}-account",
+            waa_phone_id=f"{identity.waba_namespace}-phone",
+            waa_app_id=f"{identity.waba_namespace}-app",
+            waa_token=f"{identity.waba_namespace}-token-secret",
+            waa_app_secret=f"{identity.waba_namespace}-app-secret",
+            waa_callback_url=(
+                f"https://{identity.waba_namespace}-configured.example.test/"
+            ),
+        ),
     )
 
 
@@ -123,6 +145,46 @@ def test_two_apps_keep_exact_clients_and_identities_isolated():
             "rest_ref": "BNAT",
             "waba_namespace": "bnat",
         }
+
+
+@pytest.mark.parametrize(
+    ("rest_ref", "namespace"),
+    [("BNAT", "bnat"), ("SFCS", "sfcs")],
+)
+def test_details_exposes_selected_runtime_identity_without_raw_secrets(
+    rest_ref, namespace, monkeypatch
+):
+    monkeypatch.setattr(
+        "restaurant_agent_core.waba_callback._restaurant_master_details",
+        lambda selected_rest_ref: {
+            "admins": [f"{selected_rest_ref}-admin"],
+            "service_hours": {"monday": [["10:00", "22:00"]]},
+        },
+    )
+    app, _ = _build_test_app(RestaurantIdentity(rest_ref, namespace))
+
+    with TestClient(app) as client:
+        response = client.get("/details")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "rest_ref": rest_ref,
+        "waba_namespace": namespace,
+        "waba_id": f"{namespace}-account",
+        "phone_id": f"{namespace}-phone",
+        "app_id": f"{namespace}-app",
+        "token_hint": "****cret",
+        "app_secret_hint": "****cret",
+        "validate_updates": True,
+        "display_number": f"+44-{namespace}",
+        "admins": [f"{rest_ref}-admin"],
+        "service_hours": {"monday": [["10:00", "22:00"]]},
+        "callback_url": f"https://{namespace}-waba.example.test/",
+        "configured_callback_url": (f"https://{namespace}-configured.example.test/"),
+        "details_errors": {},
+    }
+    assert f"{namespace}-token-secret" not in response.text
+    assert f"{namespace}-app-secret" not in response.text
 
 
 def test_cross_restaurant_thread_route_is_404_without_graph_side_effects():
@@ -251,8 +313,7 @@ def test_app_packages_do_not_import_each_other_or_global_wa_clients():
     core_source = "\n".join(
         path.read_text()
         for path in (
-            repo_root
-            / "packages/restaurant-agent-core/src/restaurant_agent_core"
+            repo_root / "packages/restaurant-agent-core/src/restaurant_agent_core"
         ).rglob("*.py")
     )
 

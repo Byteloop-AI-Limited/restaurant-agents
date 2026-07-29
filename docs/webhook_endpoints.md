@@ -72,7 +72,11 @@ The Elai system exposes a set of FastAPI routers that receive external webhook e
 4. `GET /offline-mode/details` - Returns current WhatsApp business configuration for the offline instance.
 
 **9. Top-Level Diagnostic Endpoints**
-1. `GET /details` - Returns WhatsApp business phone config, restaurant reference, admin list, service hours, LLM model, and stale thread timeout.
+1. `GET /details` - Returns namespaced WABA identity, masked credential hints,
+   Meta display number, effective and configured callback URLs, full restaurant
+   admin identifiers, and raw service-hours JSON. Meta or restaurant lookup
+   failures leave the local identity available and are reported as sanitized
+   `details_errors` entries.
 2. `POST /restaurant-base-url-cache/reset` - Clears cached restaurant base URLs. Accepts optional `rest_ref` query param to target a single restaurant.
 3. `POST /restaurant-master-cache/reset` - Clears cached RestaurantMaster instances. Accepts optional `rest_ref` query param.
 
@@ -90,11 +94,12 @@ feature: Webhook Endpoints
 description: >
   Handles /SelectService callbacks, routes to delivery/takeaway/triage based on active_agent, and sends service selection buttons when rest_ref is present but no agent is selected.
 
-file: watomation/fapp.py
-symbol: get_details
+file: packages/restaurant-agent-core/src/restaurant_agent_core/web/app_factory.py
+symbol: runtime_details
 feature: Webhook Endpoints
 description: >
-  Returns WhatsApp business configuration including phone ID, display number, callback URL, restaurant reference, admin list, service hours, and LLM model.
+  Returns local WABA identity plus best-effort Meta phone/callback and cached
+  restaurant admin/service-hours diagnostics.
 
 file: watomation/fapp.py
 symbol: reset_restaurant_base_url_cache_endpoint

@@ -1,4 +1,5 @@
 """Namespaced WhatsApp Business configuration without process-global clients."""
+
 # %%
 import base64
 from typing import Any
@@ -10,6 +11,9 @@ from pywa import WhatsApp as WhatsAppSync
 from pywa_async import WhatsApp
 
 # %%
+
+WABA_VALIDATE_UPDATES = True
+
 
 class WabaBusinessSettings(BaseSettings):
     waa_account_id: str
@@ -55,7 +59,7 @@ class WabaBusinessSettings(BaseSettings):
             phone_id=self.waa_phone_id,
             app_id=self.waa_app_id,
             app_secret=self.waa_app_secret,
-            validate_updates=True,
+            validate_updates=WABA_VALIDATE_UPDATES,
             continue_handling=False,
             business_private_key_password=self.waa_private_key_password_value,
         )
@@ -86,4 +90,3 @@ class WabaBusinessSettings(BaseSettings):
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.waa_token}",
         }
-

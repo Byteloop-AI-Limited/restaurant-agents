@@ -14,6 +14,7 @@ from restaurant_agent_core.runtime import (
     RestaurantRuntime,
     RestaurantSettingsBundle,
 )
+from restaurant_agent_core.waba_callback import build_runtime_details
 from restaurant_agent_core.watomation.activity import ActivityMiddleware
 from restaurant_agent_core.watomation import activity
 
@@ -161,7 +162,9 @@ def _register_whatsapp_handlers(
         ),
         MessageHandler(callback=bound_adhoc_takeaway, filters=WHEN_ADHOC_TEST_TAKEAWAY),
         MessageHandler(callback=bound_adhoc, filters=WHEN_ADHOC_TEST),
-        MessageHandler(callback=simulate_payment_complete, filters=WHEN_PAYMENT_COMPLETE),
+        MessageHandler(
+            callback=simulate_payment_complete, filters=WHEN_PAYMENT_COMPLETE
+        ),
         MessageHandler(callback=bound_debug, filters=WHEN_DEBUG),
         MessageHandler(callback=bound_graph),
     )
@@ -247,6 +250,10 @@ def create_restaurant_app(
             "rest_ref": identity.rest_ref,
             "waba_namespace": identity.waba_namespace,
         }
+
+    @app.get("/details", include_in_schema=False)
+    async def runtime_details():
+        return await build_runtime_details(runtime)
 
     # Routers read runtime and graph dependencies from app.state per request.
     if include_rider_router:
