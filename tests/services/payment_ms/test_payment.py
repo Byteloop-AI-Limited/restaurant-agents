@@ -69,16 +69,16 @@ def payment_module(monkeypatch):
         }
     )
 
-    food_order_module = ModuleType("restaurant_agent_core.services.order_management.food_order_pymodel")
+    food_order_module = ModuleType("restaurant_agent_runtime.services.order_management.food_order_pymodel")
     food_order_module.FoodOrder = object
 
     return load_module(
         "test_payment_module",
-        "restaurant_agent_core.services/payment_ms/payment.py",
+        "restaurant_agent_runtime.services/payment_ms/payment.py",
         monkeypatch,
         {
             "config": config_stub,
-            "restaurant_agent_core.services.order_management.food_order_pymodel": food_order_module,
+            "restaurant_agent_runtime.services.order_management.food_order_pymodel": food_order_module,
         },
     )
 

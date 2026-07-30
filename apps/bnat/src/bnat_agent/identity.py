@@ -1,6 +1,6 @@
 """Burger Nation-owned identity and presentation settings."""
 
-from restaurant_agent_core import RestaurantIdentity, RestaurantPresentation
+from restaurant_agent_runtime import RestaurantIdentity, RestaurantPresentation
 
 IDENTITY = RestaurantIdentity(rest_ref="BNAT", waba_namespace="bnat")
 PRESENTATION = RestaurantPresentation(

@@ -3,6 +3,8 @@
 UV workspace for the independently deployed SFCS and Burger Nation WhatsApp agents.
 
 Read [`CONSTITUTION.md`](CONSTITUTION.md) before changing the architecture.
+Use the [`docs/` index](docs/README.md) for the platform glossary, domain model,
+ADRs, feature guides, and interactive architecture guide.
 
 ## Workspace commands
 

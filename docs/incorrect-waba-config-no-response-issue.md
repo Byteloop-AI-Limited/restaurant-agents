@@ -130,11 +130,11 @@ signature validation. The monorepo intentionally keeps validation enabled.
 
 ## Relevant code
 
-- [`WabaBusinessSettings.for_namespace`](../packages/restaurant-agent-core/src/restaurant_agent_core/config/waba_setting.py)
+- [`WabaBusinessSettings.for_namespace`](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/config/waba_setting.py)
   loads one exact WABA namespace without fallback.
-- [`WabaBusinessSettings.create_async_client`](../packages/restaurant-agent-core/src/restaurant_agent_core/config/waba_setting.py)
+- [`WabaBusinessSettings.create_async_client`](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/config/waba_setting.py)
   passes the selected token and app secret to PyWa with
   `validate_updates=True`.
-- [`waba_callback.py`](../packages/restaurant-agent-core/src/restaurant_agent_core/waba_callback.py)
+- [`waba_callback.py`](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/waba_callback.py)
   contains the fail-before-write token/app, WABA/phone, runtime identity, and
   post-update callback checks.

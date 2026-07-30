@@ -52,7 +52,7 @@ def order_module(monkeypatch):
 
     config_stub.pg_settings.get_pool = get_pool
 
-    params_module = ModuleType("restaurant_agent_core.config.params")
+    params_module = ModuleType("restaurant_agent_runtime.config.params")
     params_module.invalid_refs = set()
 
     def get_restaurant_master_cached(rest_ref):
@@ -71,13 +71,13 @@ def order_module(monkeypatch):
 
     runner_module.run_rest_graph_with_custom_msg = run_rest_graph_with_custom_msg
 
-    receipt_module = ModuleType("restaurant_agent_core.services.order_management.food_order_reciept")
+    receipt_module = ModuleType("restaurant_agent_runtime.services.order_management.food_order_reciept")
     receipt_module.build_wa_order_reciept_for_cust = lambda food_order: (
         "Order Header",
         "Receipt Body",
     )
 
-    thread_module = ModuleType("restaurant_agent_core.services.thread_management")
+    thread_module = ModuleType("restaurant_agent_runtime.services.thread_management")
 
     class ThreadHandler:
         def __init__(self, pool):
@@ -87,14 +87,14 @@ def order_module(monkeypatch):
 
     module = load_module(
         "test_order_event_hooks_module",
-        "restaurant_agent_core.watomation/routers/order_event_hooks.py",
+        "restaurant_agent_runtime.watomation/routers/order_event_hooks.py",
         monkeypatch,
         {
             "config": config_stub,
-            "restaurant_agent_core.config.params": params_module,
+            "restaurant_agent_runtime.config.params": params_module,
             "sfcs_agent.rest_agent.agent_runner": runner_module,
-            "restaurant_agent_core.services.order_management.food_order_reciept": receipt_module,
-            "restaurant_agent_core.services.thread_management": thread_module,
+            "restaurant_agent_runtime.services.order_management.food_order_reciept": receipt_module,
+            "restaurant_agent_runtime.services.thread_management": thread_module,
         },
     )
     module._params_module = params_module

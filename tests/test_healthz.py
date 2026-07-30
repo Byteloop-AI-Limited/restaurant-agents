@@ -4,12 +4,12 @@ from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
-from restaurant_agent_core import (
+from restaurant_agent_runtime import (
     RestaurantIdentity,
     RestaurantPresentation,
     RestaurantSettingsBundle,
 )
-from restaurant_agent_core.web import AgentBindings, create_restaurant_app
+from restaurant_agent_runtime.web import AgentBindings, create_restaurant_app
 
 
 class FakeDatabase:

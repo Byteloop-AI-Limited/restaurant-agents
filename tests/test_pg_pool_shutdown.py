@@ -23,13 +23,13 @@ PG_FAKE_SECRET = {
 
 
 def _load_pg_module(monkeypatch):
-    aws_stub = ModuleType("restaurant_agent_core.utils.aws_setting")
+    aws_stub = ModuleType("restaurant_agent_runtime.utils.aws_setting")
     aws_stub.agent_env = dict(PG_FAKE_SECRET)
     return load_module(
         "pg_setting_under_test",
-        "restaurant_agent_core.config/pg_setting.py",
+        "restaurant_agent_runtime.config/pg_setting.py",
         monkeypatch,
-        stubs={"restaurant_agent_core.utils.aws_setting": aws_stub},
+        stubs={"restaurant_agent_runtime.utils.aws_setting": aws_stub},
     )
 
 

@@ -1,146 +1,190 @@
----
-# Feature: Takeaway WhatsApp Agent
-The takeaway WhatsApp agent handles collection/pickup orders through a LangGraph agent backed by PostgreSQL checkpoints. It exists to guide customers through the takeaway ordering flow: menu browsing, order placement via WhatsApp catalog, payment (online or pay-at-restaurant), pickup time confirmation, and conversation termination. The agent can hand off to delivery when customers switch intent and routes unsupported dine-in/reservation requests back to triage.
+# Feature: Shared Takeaway WhatsApp Agent
+
+The takeaway agent is one standard node in the shared Restaurant Agent runtime.
+It handles collection-menu delivery, payment-state checks, and handoffs to
+delivery or triage. Its implementation and four default tools are shared; each
+restaurant application supplies a complete takeaway prompt and may use the
+documented customization seams.
+
+See [the multi-agent system overview](./multi_agent_system.md) and
+[the interactive composition guide](./guides/agent-runtime-composition.html)
+for the complete ownership model.
 
 ---
 
 ## Human-Friendly Code Map
-- [Takeaway agent definition and tools](./rest_agent/agents/takeaway.py)
-- [Takeaway agent system prompt](./rest_agent/agents/prompts/takeaway_agent_prompt.md)
-- [Shared state schemas and transfer tools](./rest_agent/agents/agent_harness.py)
-- [WhatsApp sending helpers](./rest_agent/agent_wa_senders.py)
-- [Order/payment webhook router](./watomation/routers/order_event_hooks.py)
-- [Takeaway Pydantic models](./services/order_management/takeaway_pymodels.py)
-- [FoodOrder model](./services/order_management/food_order_pymodel.py)
-- [Callback handler (service selection)](./watomation/on_callback_handler.py)
-- [Graph runner (entry point)](./rest_agent/agent_runner.py)
 
-### Detailed Flow Explanation
-1. The customer selects "Takeaway" via WhatsApp interactive buttons handled by `select_service_handler` in `on_callback_handler.py`, which sets `active_agent` to `"takeaway_agent"` in graph state and re-enters the graph via `run_elai_graph_with_custom_msg`.
-2. The multi-agent router directs execution to the takeaway agent node. The agent is a LangChain agent created with `create_agent`, configured with `takeaway_agent_prompt_str`, four tools (`send_takeaway_menu_tool`, `verify_if_payment_complete`, `transfer_to_delivery`, `transfer_to_triage`), and middleware hooks (`cleanup_before_model`, `respond_on_wa`).
-3. When the customer wants to order, the agent calls `send_takeaway_menu_tool`, which retrieves the thread ID, constructs `RestMenuQueryParams` with `order_type="takeaway"`, and delegates to `send_restaurant_menu_non_carousel` in `agent_wa_senders.py` to send the menu link via WhatsApp. Menu media branding now resolves logo image by restaurant (`{rest_ref.lower()}_logo.jpg`). The turn ends with a `/DoNotRespond:` marker.
-4. The customer browses the menu and places an order through the WhatsApp catalog. The order is processed externally: order items are stored in the database and a payment link is generated. A system message with order details is injected into the graph.
-5. The customer can choose to pay online (Stripe) or pay at the restaurant upon pickup. If paying online, the payment service webhook calls `payment_complete` in `order_event_hooks.py` with a `FoodOrder` payload.
-6. The `payment_complete` endpoint differentiates between delivery and takeaway orders via `food_order.action`. For takeaway orders, it sends a receipt with "We will confirm the pickup time in a moment", updates graph state with `order_id`, `order_number`, `is_payment_successful=True`, and `retain_thread=True`, then nudges the graph via a background task.
-7. If the customer claims payment is complete or asks for an update, the agent calls `verify_if_payment_complete`, which checks three state fields: `order_summary`, `payment_link`, and `is_payment_successful`. It returns the appropriate status string ("Payment complete", "Awaiting Payment", "User to place food order on WhatsApp", or instructions to send the payment link).
-8. After payment is confirmed (or pay-at-restaurant is acknowledged), the agent thanks the customer and indicates that pickup time will be confirmed shortly. The thread is retained via `retain_thread=True` to await the pickup time webhook.
-9. When the restaurant confirms the order and sets a pickup time, the external service calls `takeaway_pickup_time_updated` in `order_event_hooks.py` with a `TakeawayPickupTimePayload` containing `TakeawaySummaryData` (order number, customer ID, pickup time, restaurant details). The endpoint runs a two-step background sequence: first it notifies the customer of the confirmed pickup time via the takeaway agent, then after a 5-second delay it calls `terminate_conversation` via the triage agent to end the session.
-10. The `terminate_conversation` tool (defined in `agent_harness.py`) sends a goodbye message to the customer via WhatsApp, marks the thread as inactive, and ends the graph with `Command(goto=END)`.
-11. If at any point the customer requests delivery instead of takeaway, the agent calls `transfer_to_delivery` (from `agent_harness.py`), which sets `active_agent` to `"delivery_agent"` and returns a handoff command.
-12. If the customer requests table booking/dine-in, the agent calls `transfer_to_triage` so triage can explain that dine-in reservations are not available in this WhatsApp flow.
+- [Standard graph adapter and runner](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agent_runner.py)
+- [Takeaway agent and ordered tools](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agents/takeaway.py)
+- [Shared menu and handoff tools](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agents/agent_harness.py)
+- [Fixed multi-agent graph](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agents/multi_agent.py)
+- [WhatsApp sending helpers](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agent_wa_senders.py)
+- [Callback handlers](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/watomation/on_callback_handler.py)
+- [Order event router](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/watomation/routers/order_event_hooks.py)
+- [Takeaway order models](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/services/order_management/takeaway_pymodels.py)
+- [FoodOrder model](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/services/order_management/food_order_pymodel.py)
+- [SFCS takeaway prompt](../apps/sfcs/src/sfcs_agent/rest_agent/prompts/takeaway_agent_prompt.md)
+- [BNAT takeaway prompt](../apps/bnat/src/bnat_agent/rest_agent/prompts/takeaway_agent_prompt.md)
 
-### Code References (Machine-Readable)
-file: rest_agent/agents/agent_harness.py
-symbol: send_takeaway_menu_tool
-feature: Takeaway WhatsApp Agent
+## Ownership and Composition
+
+- The shared runtime owns `build_takeaway_agent`, its four ordered default
+  tools, shared state/context, middleware, graph routing, checkpointing, repair,
+  debug behavior, and common WhatsApp menu helpers.
+- Each app owns a complete `takeaway_agent_prompt.md` loaded through
+  `rest_agent/agent_recipe.py`.
+- `RestaurantGraphAdapter` injects the app runtime's model and takeaway prompt
+  into the standard builder.
+- The exact app-bound async WhatsApp client reaches the takeaway menu tool
+  through `ContextSchema`.
+
+## Detailed Flow Explanation
+
+1. Selecting Collection/Takeaway is handled by `select_service_handler()`, which
+   updates `active_agent` to `takeaway_agent` and invokes the injected
+   `GraphAdapter`.
+2. The standard graph routes to the takeaway node. `build_takeaway_agent()`
+   constructs a native LangChain agent with the app-owned complete prompt,
+   shared schemas and middleware, four default tools, and optional app-owned
+   extra tools.
+3. `send_takeaway_menu_tool()` delegates to the shared menu helper with
+   `order_type="takeaway"`. It derives recipient, thread, restaurant reference,
+   runtime WhatsApp client, and logo from `ContextSchema`.
+4. A successful menu send ends the turn with a `/DoNotRespond:` marker while
+   the customer orders through WhatsApp. A menu-send failure sends fallback
+   text and ends the turn.
+5. `verify_if_payment_complete()` reads order summary, payment-link, and payment
+   state to tell the model whether payment is complete, pending, or not yet
+   ready.
+6. `payment_complete()` validates the route, recipient, and thread. For
+   collection it acknowledges the order, activates `takeaway_agent`, records
+   order/payment state, and retains the thread while pickup time is pending.
+7. `takeaway_pickup_time_updated()` schedules a runtime-bound two-step sequence:
+   notify through `takeaway_agent`, then activate triage and call
+   `terminate_conversation`.
+8. `takeaway_ready()` sends a direct runtime-bound WhatsApp notification when
+   the order is ready for collection.
+9. `transfer_to_delivery` handles a service change.
+   `transfer_to_triage` handles out-of-scope intent. Shared transfer guards can
+   block a handoff while retained work remains active.
+
+## Ordered Default Tools
+
+1. `verify_if_payment_complete`
+2. `send_takeaway_menu_tool`
+3. `transfer_to_delivery`
+4. `transfer_to_triage`
+
+The ordered list is part of the shared graph contract and is asserted in
+`tests/rest_agent/test_graph_contract.py`.
+
+## Takeaway Customization
+
+### Prompt-only behavior
+
+Edit the owning app's complete takeaway prompt. Restaurant wording, collection
+policy, and tool-use instructions stay app-owned.
+
+### Additional takeaway tool
+
+Bind a native app-owned tool through:
+
+```python
+extra_tools_by_agent={"takeaway_agent": [custom_takeaway_tool]}
+```
+
+### Complete takeaway-agent replacement
+
+Bind an app-owned native runnable through:
+
+```python
+agent_overrides={"takeaway_agent": CUSTOM_TAKEAWAY_AGENT}
+```
+
+The replacement must expose `ainvoke` and preserve the fixed node name, shared
+state/context, and handoff behavior.
+
+### Incompatible takeaway graph
+
+An app owns a complete `GraphAdapter` when takeaway needs a new node,
+incompatible state/routing, or different checkpointing, compilation, repair, or
+debug semantics.
+
+## Code References (Machine-Readable)
+
+```code-ref
+file: packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agents/takeaway.py
+symbol: build_takeaway_agent
+feature: takeaway-whatsapp-agent
 description: >
-  Sends the restaurant takeaway menu to the customer via WhatsApp by constructing RestMenuQueryParams with order_type="takeaway" and delegating to send_restaurant_menu.
+  Constructs the takeaway LangChain agent from an injected model, complete app-owned prompt, shared schemas, middleware, default tools, and optional extra tools.
+```
 
-file: rest_agent/agents/takeaway.py
+```code-ref
+file: packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agents/takeaway.py
 symbol: verify_if_payment_complete
-feature: Takeaway WhatsApp Agent
+feature: takeaway-whatsapp-agent
 description: >
-  Checks order_summary, payment_link, and is_payment_successful state fields to determine and return the current payment status.
+  Interprets order-summary, payment-link, and payment-success state for the takeaway conversation.
+```
 
-file: rest_agent/agents/takeaway.py
-symbol: agent
-feature: Takeaway WhatsApp Agent
+```code-ref
+file: packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agents/agent_harness.py
+symbol: send_takeaway_menu_tool
+feature: takeaway-whatsapp-agent
 description: >
-  LangChain agent configured with takeaway tools, system prompt, middleware hooks, and shared AgentState/ContextSchema schemas.
+  Sends a restaurant-specific collection menu through the exact runtime WhatsApp client and ends the turn.
+```
 
-file: rest_agent/agents/agent_harness.py
-symbol: AgentState
-feature: Takeaway WhatsApp Agent
-description: >
-  Shared TypedDict state schema containing messages, order/payment flags, and active_agent for multi-agent routing.
-
-file: rest_agent/agents/agent_harness.py
-symbol: ContextSchema
-feature: Takeaway WhatsApp Agent
-description: >
-  Pydantic BaseModel carrying runtime resources (PostgreSQL pool, WhatsApp client, recipient, Ordelo client, ThreadHandler) into graph nodes and tools.
-
-file: rest_agent/agents/agent_harness.py
+```code-ref
+file: packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agents/agent_harness.py
 symbol: transfer_to_delivery
-feature: Takeaway WhatsApp Agent
+feature: takeaway-whatsapp-agent
 description: >
-  Transfer tool that sets active_agent to delivery_agent and returns a parent-graph handoff command for takeaway to delivery routing.
+  Applies transfer guards, sets delivery_agent active, and returns a parent-graph handoff command.
+```
 
-file: rest_agent/agents/agent_harness.py
-symbol: terminate_conversation
-feature: Takeaway WhatsApp Agent
-description: >
-  Marks threads inactive, sends goodbye via WhatsApp, and ends the graph with termination metadata.
-
-file: rest_agent/agents/agent_harness.py
-symbol: cleanup_before_model
-feature: Takeaway WhatsApp Agent
-description: >
-  Pre-model middleware that detects /DoNotRespond: markers and skips the LLM call by jumping to end.
-
-file: rest_agent/agents/agent_harness.py
-symbol: respond_on_wa
-feature: Takeaway WhatsApp Agent
-description: >
-  Post-agent middleware that sends AI responses via WhatsApp and cleans up /DoNotRespond: markers from message history.
-
-file: rest_agent/agent_wa_senders.py
-symbol: send_restaurant_menu
-feature: Takeaway WhatsApp Agent
-description: >
-  Constructs RestMenuQueryParams and calls send_restaurant_menu_non_carousel to deliver the menu via WhatsApp, returning ValueError on failure.
-
-file: services/wa_templates/rest_menu_wa_template.py
-symbol: send_restaurant_menu_non_carousel
-feature: Takeaway WhatsApp Agent
-description: >
-  Sends menu media and now resolves the WhatsApp image URL dynamically from rest_ref-specific logo assets.
-
-file: watomation/routers/order_event_hooks.py
-symbol: payment_complete
-feature: Takeaway WhatsApp Agent
-description: >
-  Webhook endpoint that processes payment completion for takeaway orders, sends receipt, updates graph state with order and payment details, and nudges the graph.
-
-file: watomation/routers/order_event_hooks.py
-symbol: takeaway_pickup_time_updated
-feature: Takeaway WhatsApp Agent
-description: >
-  Webhook endpoint that receives confirmed pickup time from the restaurant and runs a two-step background sequence: first notifies the customer of the pickup time via the takeaway agent, then terminates the conversation via the triage agent after a 5-second delay.
-
-file: services/order_management/takeaway_pymodels.py
-symbol: TakeawaySummaryData
-feature: Takeaway WhatsApp Agent
-description: >
-  Pydantic model containing takeaway order tracking fields including order_number, customer_id, pickup_time, restaurant details, and confirmation status.
-
-file: services/order_management/takeaway_pymodels.py
-symbol: TakeawayPickupTimePayload
-feature: Takeaway WhatsApp Agent
-description: >
-  Pydantic model wrapping TakeawaySummaryData and RestaurantMasterData as the webhook payload for pickup time updates.
-
-file: services/order_management/food_order_pymodel.py
-symbol: FoodOrder
-feature: Takeaway WhatsApp Agent
-description: >
-  Pydantic model representing the food_order table, used in payment_complete webhook to carry order details, pricing, and payment status.
-
-file: watomation/on_callback_handler.py
+```code-ref
+file: packages/restaurant-agent-runtime/src/restaurant_agent_runtime/watomation/on_callback_handler.py
 symbol: select_service_handler
-feature: Takeaway WhatsApp Agent
+feature: takeaway-whatsapp-agent
 description: >
-  Handles WhatsApp callback buttons for service selection, setting active_agent to takeaway_agent when takeaway is selected.
+  Validates service-selection callback data and invokes the app's graph adapter with the selected active agent.
+```
 
-### Edge Cases
-- Menu send failure -> `send_takeaway_menu_tool` catches `ValueError` from `send_restaurant_menu` and sends a fallback text message to the customer.
-- Customer requests delivery mid-takeaway -> agent calls `transfer_to_delivery` which sets `active_agent` to `"delivery_agent"` and hands off to the delivery graph.
-- Customer requests dine-in/table booking mid-takeaway -> agent calls `transfer_to_triage`; triage explains that dine-in reservations are not available in this WhatsApp flow and offers delivery or collection.
-- Payment not yet complete when customer asks for update -> `verify_if_payment_complete` returns "Awaiting Payment" and the agent prompts the customer to complete payment.
-- No order placed yet when payment check is called -> `verify_if_payment_complete` returns "User to place food order on WhatsApp" to redirect the flow.
-- Pickup time webhook arrives before payment -> the system message instructs `terminate_conversation` regardless; the thread ends and the customer is given the pickup time.
-- Pay-at-restaurant selected -> the agent acknowledges the choice; no `is_payment_successful` state flip occurs via webhook; the flow continues to pickup time confirmation.
-- Stale thread without `retain_thread` -> thread hooks terminate the session; with `retain_thread=True` (set after payment), the thread persists until pickup time is confirmed.
-- Transfer requested while `retain_thread=True` -> shared transfer guard can block handoff and keep the current flow until retained delivery/takeaway state is resolved.
-- Recipient mismatch in payment webhook -> `payment_complete` returns HTTP 400 if `food_order.recipient` does not match the path parameter.
-- No scheduled or prebooked pickups -> the agent prompt explicitly states all pickups are based on the confirmed time provided after order placement; no pre-booking is supported.
+```code-ref
+file: packages/restaurant-agent-runtime/src/restaurant_agent_runtime/watomation/routers/order_event_hooks.py
+symbol: payment_complete
+feature: takeaway-whatsapp-agent
+description: >
+  Validates collection payment events, updates takeaway graph state, and schedules runtime-bound graph work.
+```
+
+```code-ref
+file: packages/restaurant-agent-runtime/src/restaurant_agent_runtime/watomation/routers/order_event_hooks.py
+symbol: takeaway_pickup_time_updated
+feature: takeaway-whatsapp-agent
+description: >
+  Schedules pickup-time notification through takeaway followed by conversation termination through triage.
+```
+
+```code-ref
+file: packages/restaurant-agent-runtime/src/restaurant_agent_runtime/watomation/routers/order_event_hooks.py
+symbol: takeaway_ready
+feature: takeaway-whatsapp-agent
+description: >
+  Sends a direct collection-ready notification with the running app's exact WhatsApp client.
+```
+
+## Edge Cases
+
+- Menu-send failure sends fallback text and ends the graph turn.
+- Payment checks before an order or payment link return the corresponding
+  not-ready state.
+- Recipient or thread mismatch in payment events returns `400`.
+- Cross-restaurant routes return `404` before graph work or external effects.
+- `retain_thread=True` keeps the thread active while pickup time is pending and
+  can block a handoff.
+- Pickup-time completion intentionally returns to triage for the standard
+  termination tool.
+- Invalid callback data is logged and does not advance the graph.

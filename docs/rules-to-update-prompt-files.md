@@ -1,71 +1,146 @@
-# Rules to Update Prompt Files
+# Rules to Update Restaurant Agent Prompt Files
 
-This reference defines how to update multi-agent prompt files consistently for the WhatsApp assistant.
+This reference defines how to change application-owned prompts without
+duplicating or bypassing the shared Restaurant Agent runtime.
 
-## Scope
-- Default scope: multi-agent prompts only
-  - `rest_agent/agents/prompts/triage_agent_prompt.md`
-  - `rest_agent/agents/prompts/delivery_multiagent_prompt.md`
-  - `rest_agent/agents/prompts/takeaway_agent_prompt.md`
-- Legacy single-agent prompts are out of scope unless explicitly requested.
+See [the multi-agent system overview](./multi_agent_system.md),
+[the interactive composition guide](./guides/agent-runtime-composition.html),
+and [the governing decision record](./architecture/shared-agent-runtime-decisions.md)
+for the surrounding architecture.
+
+## Scope and Ownership
+
+Every application owns three complete prompt files:
+
+```text
+apps/<app>/src/<app>_agent/rest_agent/prompts/
+  triage_agent_prompt.md
+  delivery_multiagent_prompt.md
+  takeaway_agent_prompt.md
+```
+
+Current applications:
+
+- SFCS: `apps/sfcs/src/sfcs_agent/rest_agent/prompts/`
+- BNAT: `apps/bnat/src/bnat_agent/rest_agent/prompts/`
+
+The shared runtime owns agent construction, state, routing, middleware, and
+standard tools. It does not own prompt fragments and does not merge a shared
+base prompt with an application override. `agent_recipe.py` reads all three
+files into `RestaurantPrompts` during module import.
+
+## Decide the Change Boundary First
+
+| Desired change | Correct location |
+| --- | --- |
+| Wording, restaurant policy, tone, or tool-use instruction | App-owned prompt file |
+| Add a native capability to one existing node | App-owned tool plus `extra_tools_by_agent` |
+| Replace one complete standard node | App-owned runnable plus `agent_overrides` |
+| Add a graph node or change state/routing/handoffs | App-owned `GraphAdapter` |
+| Add a WhatsApp callback or API route | Native PyWa handler or FastAPI router in app assembly |
+
+Do not ask a prompt to call a tool that the selected node does not expose. Do
+not copy a shared agent module into an application to make a prompt change.
+
+## Cross-App Change Rules
+
+- A restaurant-specific policy or identity change updates only the owning app.
+- A standard behavioral change intended for SFCS and BNAT must review both
+  apps' complete prompts and the shared graph/tool contract together.
+- Do not import or reuse another app's prompt file.
+- Keep prompts app-owned even when two applications currently contain identical
+  text.
+- Restart the application after a prompt edit; the recipe loads prompt text at
+  import time.
 
 ## Core Behavioral Rules
 
-### 1) Service Selection Is Mandatory (Prompt-Level)
-- Triage must verify the customer's service intent (delivery, takeaway, or inquiry) before proceeding.
-- If service intent is not clearly known from state/system messages/conversation, triage must call:
-  - `ask_user_to_select_service`
+### 1. Service selection is mandatory
+
+- Triage must establish delivery, takeaway/collection, or inquiry intent before
+  proceeding.
+- If intent is not clear from state, system messages, or conversation, call
+  `ask_user_to_select_service`.
 - Do not guess service intent.
 
-### 2) Immediate Transfer for Explicit Specialized Intent
-- If user explicitly asks for delivery -> `transfer_to_delivery`
-- If user explicitly asks for takeaway/collection -> `transfer_to_takeaway`
-- If user explicitly asks for dine-in/table booking/reservation -> triage handles it as unsupported; specialist agents call `transfer_to_triage`
-- Use tool-first behavior; avoid extra pre-transfer clarification if intent is explicit.
+### 2. Explicit specialized intent transfers immediately
 
-### 3) General Queries Stay in Triage
-- For complaints, parking, contact info, unsatisfactory service, events, and similar non-specialized intents:
-  - Answer directly in triage
-  - Do not transfer unless the user explicitly requests a specialized service
+- Delivery intent -> `transfer_to_delivery`
+- Takeaway or collection intent -> `transfer_to_takeaway`
+- Unsupported dine-in, booking, or reservation intent stays in triage; a
+  specialist returns it with `transfer_to_triage`.
+- Prefer the transfer tool without unnecessary pre-transfer prose.
 
-### 4) Inquiry Button Handling
-- The third top-level service option is `Inquiry`.
-- Selecting `Inquiry` activates triage with `HumanMessage("Inquiry")`.
-- Triage asks one concise direct question to understand the inquiry.
+### 3. General queries stay in triage
 
-### 5) Single Restaurant Language
-- The system operates for a single restaurant (SFC - Southern Fried Chicken Salisbury).
-- Refer to the restaurant by name when appropriate; no branch disambiguation is needed.
+Complaints, parking, contact details, events, and similar non-ordering questions
+remain in triage unless the customer explicitly requests a specialized service.
 
-## Prompt Writing Rules (GPT-4.1-mini)
-- Use deterministic instruction order:
-  1. Non-negotiable rules
-  2. Decision ladder
-  3. Tool usage map
-  4. Output style
-  5. Examples
-  6. Negative examples
-- Reduce ambiguity and conflicting instructions.
-- Prefer short, imperative sentences.
+### 4. Inquiry selection stays in triage
 
-## Output Style Rules (WhatsApp)
-- Keep responses concise and operational.
-- Prefer one short line for simple replies.
-- If multiple points are required, use bullet points.
-- Avoid long paragraphs.
+The `Inquiry` option activates `triage_agent`. Triage should ask one concise
+question when the inquiry is not yet clear.
 
-## Consistency Checklist Before Finalizing Prompt Changes
-- [ ] Triage gate behavior is explicit and hard to misread.
-- [ ] Transfer rules are immediate for explicit service intent.
-- [ ] General-query handling remains in triage.
-- [ ] Number and text equivalents are both supported for fallback menus.
-- [ ] Style guidance is concise and WhatsApp-appropriate.
-- [ ] Tool names exactly match implemented tools.
-- [ ] No legacy prompt files were edited unless explicitly requested.
+### 5. Restaurant identity must match the owning app
 
-## Change Log Template (Optional)
+- Use the restaurant name, contact details, service policy, and locality that
+  belong to the selected application.
+- Do not leave SFCS/Salisbury wording in BNAT prompts or BNAT wording in SFCS
+  prompts.
+- Do not change `rest_ref`, WABA namespace, or presentation values in prompt
+  text; those belong in the app's identity and settings composition.
+
+## Prompt Writing Rules
+
+Use a deterministic instruction order:
+
+1. Non-negotiable rules
+2. Decision ladder
+3. Tool-usage map
+4. Output style
+5. Examples
+6. Negative examples
+
+Prefer short imperative instructions, remove conflicts, and keep tool names
+identical to the implementation.
+
+## WhatsApp Output Style
+
+- Keep simple replies to one short line where practical.
+- Use bullets only when multiple points are needed.
+- Avoid long paragraphs and internal implementation language.
+- Do not emit extra text after a tool-only handoff instruction.
+
+## Validation Checklist
+
+- [ ] The edited file belongs to the intended app.
+- [ ] All three prompts for that app remain non-empty.
+- [ ] Restaurant identity and policies match the owning app.
+- [ ] Triage service-selection behavior remains explicit.
+- [ ] Specialized transfers use exact implemented tool names.
+- [ ] General queries remain in triage.
+- [ ] Every referenced tool exists on that standard node or is supplied through
+      `extra_tools_by_agent`.
+- [ ] No shared runtime module or other app prompt was copied.
+- [ ] The app's composition test still proves prompt loading and exact runtime
+      binding.
+- [ ] If behavior is intended to be common, both apps and shared contract tests
+      were reviewed.
+
+## Relevant Validation
+
+For a prompt-only change, run the complete app package test suite for each app
+whose prompt changed, then the repository documentation/static checks required
+by the task. Cross-app standard behavior changes require both app suites and the
+shared runtime suite.
+
+## Change Log Template
+
 - Date:
+- Application:
 - Prompt files updated:
 - Behavior changes:
-- Risks noted:
-- Follow-up needed:
+- Tool-contract impact:
+- Cross-app review:
+- Risks:
+- Follow-up:

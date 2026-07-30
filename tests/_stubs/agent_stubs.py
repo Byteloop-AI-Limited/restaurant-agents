@@ -67,7 +67,9 @@ def _transfer_command(name):
 
 
 def build_agent_harness_stub():
-    module = ModuleType("sfcs_agent.rest_agent.agents.agent_harness")
+    module = ModuleType(
+        "restaurant_agent_runtime.rest_agent.agents.agent_harness"
+    )
 
     class ContextSchema(BaseModel):
         model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -92,10 +94,6 @@ def build_agent_harness_stub():
         """Transfer to takeaway agent in tests."""
         return _transfer_command("takeaway_agent")
 
-    def transfer_to_dinein(*args, **kwargs):
-        """Transfer to dine-in agent in tests."""
-        return _transfer_command("dinein_agent")
-
     def transfer_to_triage(*args, **kwargs):
         """Transfer to triage agent in tests."""
         return _transfer_command("triage_agent")
@@ -104,7 +102,6 @@ def build_agent_harness_stub():
     module.send_restaurant_menu_tool = send_restaurant_menu_tool
     module.transfer_to_delivery = transfer_to_delivery
     module.transfer_to_takeaway = transfer_to_takeaway
-    module.transfer_to_dinein = transfer_to_dinein
     module.transfer_to_triage = transfer_to_triage
     return module
 
@@ -129,7 +126,7 @@ def build_langchain_agents_stub():
 
 
 def build_lg_utils_agent_stub():
-    module = ModuleType("restaurant_agent_core.services.lg_utils")
+    module = ModuleType("restaurant_agent_runtime.services.lg_utils")
     module.llm_settings = SimpleNamespace(
         llm_client=object(),
         llm_client_single_tool_turn=object(),

@@ -15,7 +15,6 @@ from pathlib import Path
 from tests._stubs.agent_stubs import (
     build_agent_harness_stub,
     build_langchain_agents_stub,
-    build_lg_utils_agent_stub,
 )
 from tests._stubs.config_stub import build_config_stub
 from tests._stubs.loader import load_module
@@ -27,17 +26,15 @@ def takeaway_module(monkeypatch):
     config_stub.project_settings.project_root = str(Path(__file__).resolve().parents[3])
     harness_stub = build_agent_harness_stub()
     langchain_agents_stub = build_langchain_agents_stub()
-    lg_utils_stub = build_lg_utils_agent_stub()
 
     module = load_module(
         "test_takeaway_agent_module",
-        "sfcs_agent.rest_agent/agents/takeaway.py",
+        "restaurant_agent_runtime.rest_agent/agents/takeaway.py",
         monkeypatch,
         {
             "config": config_stub,
-            "sfcs_agent.rest_agent.agents.agent_harness": harness_stub,
+            "restaurant_agent_runtime.rest_agent.agents.agent_harness": harness_stub,
             "langchain.agents": langchain_agents_stub,
-            "restaurant_agent_core.services.lg_utils": lg_utils_stub,
         },
     )
     module._langchain_agents_stub = langchain_agents_stub
@@ -74,8 +71,16 @@ async def test_verify_if_payment_complete_branch_outputs(takeaway_module, state,
 
 
 def test_takeaway_agent_is_constructed_with_expected_tools_and_prompt(takeaway_module):
+    model = object()
+    assert takeaway_module._langchain_agents_stub.create_agent_calls == []
+
+    takeaway_module.build_takeaway_agent(
+        model=model,
+        system_prompt="Takeaway application prompt",
+    )
     [call] = takeaway_module._langchain_agents_stub.create_agent_calls
 
+    assert call["model"] is model
     assert takeaway_module.verify_if_payment_complete in call["tools"]
     assert len(call["tools"]) == 4
     assert "takeaway" in call["system_prompt"].lower()

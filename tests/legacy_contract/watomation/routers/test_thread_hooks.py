@@ -84,17 +84,17 @@ def thread_module(monkeypatch):
     runner_module.debug_state = debug_state
     runner_module.debug_state_by_thread = debug_state_by_thread
 
-    thread_management_module = ModuleType("restaurant_agent_core.services.thread_management")
+    thread_management_module = ModuleType("restaurant_agent_runtime.services.thread_management")
     thread_management_module.ThreadHandler = FakeThreadHandler
 
     module = load_module(
         "test_thread_hooks_module",
-        "restaurant_agent_core.watomation/routers/thread_hooks.py",
+        "restaurant_agent_runtime.watomation/routers/thread_hooks.py",
         monkeypatch,
         {
             "config": config_stub,
             "sfcs_agent.rest_agent.agent_runner": runner_module,
-            "restaurant_agent_core.services.thread_management": thread_management_module,
+            "restaurant_agent_runtime.services.thread_management": thread_management_module,
         },
     )
     module._runner_module = runner_module

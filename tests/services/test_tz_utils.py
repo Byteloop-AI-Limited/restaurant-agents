@@ -11,7 +11,7 @@ Unit tests for UK timezone utility helpers
 
 from datetime import datetime, timezone
 
-from restaurant_agent_core.services import tz_utils
+from restaurant_agent_runtime.services import tz_utils
 
 
 def test_parse_db_iso_handles_z_suffix():

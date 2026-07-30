@@ -3,7 +3,7 @@ name = "bnat-agent"
 version = "0.1.0"
 description = "Burger Nation restaurant agent"
 requires-python = ">=3.13,<3.14"
-dependencies = ["restaurant-agent-core"]
+dependencies = ["restaurant-agent-runtime"]
 
 [build-system]
 requires = ["hatchling"]

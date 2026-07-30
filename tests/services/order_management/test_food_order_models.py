@@ -52,7 +52,7 @@ def food_order_module(monkeypatch):
         }
     )
 
-    pricing_module = ModuleType("restaurant_agent_core.services.pricing_ms")
+    pricing_module = ModuleType("restaurant_agent_runtime.services.pricing_ms")
     pricing_module.get_final_order_value = lambda **kwargs: {
         "final_order_value": 25.5,
         "rest_cost": 18.0,
@@ -66,9 +66,9 @@ def food_order_module(monkeypatch):
 
     module = load_module(
         "test_food_order_pymodel_module",
-        "restaurant_agent_core.services/order_management/food_order_pymodel.py",
+        "restaurant_agent_runtime.services/order_management/food_order_pymodel.py",
         monkeypatch,
-        {"config": config_stub, "restaurant_agent_core.services.pricing_ms": pricing_module},
+        {"config": config_stub, "restaurant_agent_runtime.services.pricing_ms": pricing_module},
     )
     module._config_stub = config_stub
     return module

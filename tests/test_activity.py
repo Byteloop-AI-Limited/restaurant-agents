@@ -16,9 +16,9 @@ from fastapi import BackgroundTasks, FastAPI
 from loguru import logger
 from starlette.testclient import TestClient
 
-from restaurant_agent_core.watomation import activity
-from restaurant_agent_core.watomation.activity import ActivityMiddleware
-from restaurant_agent_core.watomation.background_task_runner import (
+from restaurant_agent_runtime.watomation import activity
+from restaurant_agent_runtime.watomation.activity import ActivityMiddleware
+from restaurant_agent_runtime.watomation.background_task_runner import (
     get_active_background_task_count,
     run_background_task,
 )
@@ -171,37 +171,36 @@ async def test_tracked_decorator_releases_on_exception():
 def test_agent_runner_entrypoint_is_decorated():
     """run_rest_graph_with_custom_msg is the single choke point for agent runs.
 
-    Checked via AST rather than by importing: rest_agent.agent_runner builds settings
-    from AWS Secrets Manager at import time, so importing it needs deployment env.
+    Checked via AST rather than by importing: the runtime runner imports settings
+    whose deployment configuration is initialized at module import time.
     """
     repo_root = pathlib.Path(__file__).resolve().parent.parent
-    for app_name, package_name in (("sfcs", "sfcs_agent"), ("bnat", "bnat_agent")):
-        source = (
-            repo_root
-            / "apps"
-            / app_name
-            / "src"
-            / package_name
-            / "rest_agent"
-            / "agent_runner.py"
-        ).read_text()
-        tree = ast.parse(source)
+    source = (
+        repo_root
+        / "packages"
+        / "restaurant-agent-runtime"
+        / "src"
+        / "restaurant_agent_runtime"
+        / "rest_agent"
+        / "agent_runner.py"
+    ).read_text()
+    tree = ast.parse(source)
 
-        targets = [
-            node
-            for node in tree.body
-            if isinstance(node, ast.AsyncFunctionDef)
-            and node.name == "run_rest_graph_with_custom_msg"
-        ]
-        assert len(targets) == 1, f"expected one {app_name} agent-run entrypoint"
+    targets = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.AsyncFunctionDef)
+        and node.name == "run_rest_graph_with_custom_msg"
+    ]
+    assert len(targets) == 1, "expected one shared agent-run entrypoint"
 
-        decorators = [ast.unparse(dec) for dec in targets[0].decorator_list]
-        tracking = [dec for dec in decorators if "activity.tracked" in dec]
-        assert tracking, decorators
-        assert any(
-            "AGENT_RUNS" in dec or activity.AGENT_RUNS in dec for dec in tracking
-        ), tracking
-        assert any("recipient" in dec for dec in tracking), tracking
+    decorators = [ast.unparse(dec) for dec in targets[0].decorator_list]
+    tracking = [dec for dec in decorators if "activity.tracked" in dec]
+    assert tracking, decorators
+    assert any(
+        "AGENT_RUNS" in dec or activity.AGENT_RUNS in dec for dec in tracking
+    ), tracking
+    assert any("recipient" in dec for dec in tracking), tracking
 
 
 # %% background_task_runner integration

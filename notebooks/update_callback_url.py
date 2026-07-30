@@ -3,10 +3,10 @@
 # %% Select the app, using the same names accepted by scripts/run-agent.sh.
 from importlib import import_module
 
-from restaurant_agent_core.config.waba_setting import WabaBusinessSettings
-from restaurant_agent_core.utils.aws_setting import agent_env
+from restaurant_agent_runtime.config.waba_setting import WabaBusinessSettings
+from restaurant_agent_runtime.utils.aws_setting import agent_env
 
-APP = "bnat"
+APP = "sfcs"
 CALLBACK_URL = "https://rest-agent-test.ordelo.app/"
 
 identity_modules = {

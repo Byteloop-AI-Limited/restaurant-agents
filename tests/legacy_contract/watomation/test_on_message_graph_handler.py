@@ -46,7 +46,8 @@ class FakeMessage:
 
 class FakeResponse:
     history = []
-    url = "https://ordelo.test/payment-hooks/payment-complete/"
+    is_redirect = False
+    url = "https://ordelo.test/payment-hooks/payment-complete"
 
     def raise_for_status(self):
         return None
@@ -100,7 +101,7 @@ def handler_module(monkeypatch):
     runner_module.run_rest_graph_with_custom_msg = run_rest_graph_with_custom_msg
     runner_module.debug_state = debug_state
 
-    params_module = ModuleType("restaurant_agent_core.config.params")
+    params_module = ModuleType("restaurant_agent_runtime.config.params")
 
     class FakeSchedule:
         def __init__(self, open_value=True):
@@ -121,12 +122,12 @@ def handler_module(monkeypatch):
     async def _async_base_url():
         return "https://ordelo.test"
 
-    maps_module = ModuleType("restaurant_agent_core.services.maps_service")
+    maps_module = ModuleType("restaurant_agent_runtime.services.maps_service")
     maps_module.address_resolver = SimpleNamespace(
         get_address_from_coordinates=lambda lat, lon: {"lat": lat, "lon": lon}
     )
 
-    thread_module = ModuleType("restaurant_agent_core.services.thread_management")
+    thread_module = ModuleType("restaurant_agent_runtime.services.thread_management")
     thread_module.inactive = []
 
     class FakeThreadHandler:
@@ -140,14 +141,14 @@ def handler_module(monkeypatch):
 
     module = load_module(
         "test_on_message_graph_handler_module",
-        "restaurant_agent_core.watomation/on_message_graph_handler.py",
+        "restaurant_agent_runtime.watomation/on_message_graph_handler.py",
         monkeypatch,
         {
             "config": config_stub,
-            "restaurant_agent_core.config.params": params_module,
+            "restaurant_agent_runtime.config.params": params_module,
             "sfcs_agent.rest_agent.agent_runner": runner_module,
-            "restaurant_agent_core.services.maps_service": maps_module,
-            "restaurant_agent_core.services.thread_management": thread_module,
+            "restaurant_agent_runtime.services.maps_service": maps_module,
+            "restaurant_agent_runtime.services.thread_management": thread_module,
         },
     )
     module.FlowButton = lambda **kwargs: SimpleNamespace(**kwargs)
@@ -238,7 +239,7 @@ async def test_simulate_payment_complete_no_order_and_success(monkeypatch, handl
     await handler_module.simulate_payment_complete(wa, msg)
     assert factory.posts == [
         {
-            "url": "https://ordelo.test/payment-hooks/payment-complete/",
+            "url": "https://ordelo.test/payment-hooks/payment-complete",
             "json": {"data": {"object": {"metadata": {"orderID": "ORD-1"}}}},
         }
     ]

@@ -13,14 +13,14 @@ WORKDIR /workspace
 
 COPY --from=uv /uv /uvx /bin/
 COPY pyproject.toml uv.lock ./
-COPY packages/restaurant-agent-core/pyproject.toml packages/restaurant-agent-core/pyproject.toml
+COPY packages/restaurant-agent-runtime/pyproject.toml packages/restaurant-agent-runtime/pyproject.toml
 COPY apps/sfcs/pyproject.toml apps/sfcs/pyproject.toml
 COPY apps/bnat/pyproject.toml apps/bnat/pyproject.toml
 
 RUN test -n "$APP_PACKAGE" \
     && uv sync --frozen --no-dev --package "$APP_PACKAGE" --no-install-workspace
 
-COPY packages/restaurant-agent-core packages/restaurant-agent-core
+COPY packages/restaurant-agent-runtime packages/restaurant-agent-runtime
 COPY apps apps
 
 RUN uv sync --frozen --no-dev --package "$APP_PACKAGE" --no-editable

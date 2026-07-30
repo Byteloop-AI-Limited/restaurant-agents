@@ -40,7 +40,7 @@ def _stub_config(monkeypatch):
     from tests._stubs.config_stub import build_config_stub
 
     config_stub = build_config_stub()
-    monkeypatch.setitem(sys.modules, "restaurant_agent_core.config", config_stub)
+    monkeypatch.setitem(sys.modules, "restaurant_agent_runtime.config", config_stub)
     yield config_stub
 
 
@@ -48,7 +48,7 @@ def _stub_config(monkeypatch):
 def customer_module():
     # Import inside fixture to honour monkeypatched config
     import importlib
-    import restaurant_agent_core.services.ordelo_service.datamodels.customer_master_pymodel as module
+    import restaurant_agent_runtime.services.ordelo_service.datamodels.customer_master_pymodel as module
     importlib.reload(module)
     return module
 
@@ -56,14 +56,14 @@ def customer_module():
 @pytest.fixture
 def cust_rest_map_module():
     import importlib
-    import restaurant_agent_core.services.ordelo_service.datamodels.cust_rest_map_pymodel as module
+    import restaurant_agent_runtime.services.ordelo_service.datamodels.cust_rest_map_pymodel as module
     importlib.reload(module)
     return module
 
 
 def _patch_client_ordelo(monkeypatch, fake_client):
     import sys
-    sys.modules["restaurant_agent_core.config"].client_ordelo = fake_client
+    sys.modules["restaurant_agent_runtime.config"].client_ordelo = fake_client
 
 
 def test_customer_master_defaults_for_house_number_and_street(customer_module):

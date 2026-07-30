@@ -10,7 +10,7 @@ import asyncio
 
 import pytest
 
-from restaurant_agent_core.watomation.background_task_runner import (
+from restaurant_agent_runtime.watomation.background_task_runner import (
     get_active_background_task_count,
     run_background_task,
 )

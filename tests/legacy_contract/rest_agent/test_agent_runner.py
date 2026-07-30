@@ -44,29 +44,29 @@ def agent_runner_module(monkeypatch):
     config_stub = build_config_stub()
     monkeypatch.setitem(sys.modules, "config", config_stub)
 
-    lg_stub = ModuleType("restaurant_agent_core.services.lg_utils")
+    lg_stub = ModuleType("restaurant_agent_runtime.services.lg_utils")
     lg_stub.get_config_for_recipient = lambda *a, **k: None
     lg_stub.get_state_values = lambda *a, **k: {}
     lg_stub.shorten_state_messages = lambda *a, **k: []
-    monkeypatch.setitem(sys.modules, "restaurant_agent_core.services.lg_utils", lg_stub)
+    monkeypatch.setitem(sys.modules, "restaurant_agent_runtime.services.lg_utils", lg_stub)
 
-    ordelo_stub = ModuleType("restaurant_agent_core.services.ordelo_service.ordelo_service")
+    ordelo_stub = ModuleType("restaurant_agent_runtime.services.ordelo_service.ordelo_service")
 
     class FakeOrdeloService:
         def __init__(self, rest_ref):
             self.rest_ref = rest_ref
 
     ordelo_stub.OrdeloService = FakeOrdeloService
-    monkeypatch.setitem(sys.modules, "restaurant_agent_core.services.ordelo_service.ordelo_service", ordelo_stub)
+    monkeypatch.setitem(sys.modules, "restaurant_agent_runtime.services.ordelo_service.ordelo_service", ordelo_stub)
 
-    thread_mgmt_stub = ModuleType("restaurant_agent_core.services.thread_management")
+    thread_mgmt_stub = ModuleType("restaurant_agent_runtime.services.thread_management")
 
     class FakeThreadHandler:
         def __init__(self, pool):
             self.pool = pool
 
     thread_mgmt_stub.ThreadHandler = FakeThreadHandler
-    monkeypatch.setitem(sys.modules, "restaurant_agent_core.services.thread_management", thread_mgmt_stub)
+    monkeypatch.setitem(sys.modules, "restaurant_agent_runtime.services.thread_management", thread_mgmt_stub)
 
     multi_agent_stub = ModuleType("sfcs_agent.rest_agent.agents.multi_agent")
     multi_agent_stub.builder = SimpleNamespace(compile=lambda **kwargs: None)

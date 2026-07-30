@@ -31,20 +31,20 @@ def _stub_config(monkeypatch):
     config_stub = build_config_stub()
     monkeypatch.setitem(sys.modules, "config", config_stub)
 
-    params_stub = ModuleType("restaurant_agent_core.config.params")
+    params_stub = ModuleType("restaurant_agent_runtime.config.params")
 
     async def get_restaurant_base_url_async(key):
         return "https://ordelo.test"
 
     params_stub.get_restaurant_base_url_async = get_restaurant_base_url_async
-    monkeypatch.setitem(sys.modules, "restaurant_agent_core.config.params", params_stub)
+    monkeypatch.setitem(sys.modules, "restaurant_agent_runtime.config.params", params_stub)
     yield config_stub
 
 
 @pytest.fixture
 def ordelo_module():
     import importlib
-    import restaurant_agent_core.services.ordelo_service.ordelo_service as module
+    import restaurant_agent_runtime.services.ordelo_service.ordelo_service as module
     importlib.reload(module)
     return module
 

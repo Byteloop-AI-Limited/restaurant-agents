@@ -63,7 +63,7 @@ def admin_module(monkeypatch):
 
     runner_module.run_admin_graph_with_custom_msg = run_admin_graph_with_custom_msg
 
-    thread_module = ModuleType("restaurant_agent_core.services.thread_management")
+    thread_module = ModuleType("restaurant_agent_runtime.services.thread_management")
     thread_module.inactive = []
 
     class ThreadHandler:
@@ -77,12 +77,12 @@ def admin_module(monkeypatch):
 
     module = load_module(
         "test_on_admin_message_module",
-        "restaurant_agent_core.watomation/on_admin_message.py",
+        "restaurant_agent_runtime.watomation/on_admin_message.py",
         monkeypatch,
         {
             "config": config_stub,
             "sfcs_agent.rest_agent.agent_runner": runner_module,
-            "restaurant_agent_core.services.thread_management": thread_module,
+            "restaurant_agent_runtime.services.thread_management": thread_module,
         },
     )
     module._runner_module = runner_module

@@ -32,7 +32,7 @@ def pricing_module(monkeypatch):
     config_stub = build_config_stub()
     return load_module(
         "test_pricing_logic_module",
-        "restaurant_agent_core.services/pricing_ms/pricing_logic.py",
+        "restaurant_agent_runtime.services/pricing_ms/pricing_logic.py",
         monkeypatch,
         {"config": config_stub},
     )

@@ -45,7 +45,7 @@ def rider_module(monkeypatch):
     config_stub = build_config_stub()
     config_stub.project_settings.get_ordelo_url = lambda client: "https://ordelo.test"
 
-    params_module = ModuleType("restaurant_agent_core.config.params")
+    params_module = ModuleType("restaurant_agent_runtime.config.params")
     params_module.invalid_refs = set()
 
     def get_restaurant_master_cached(rest_ref):
@@ -65,11 +65,11 @@ def rider_module(monkeypatch):
 
     module = load_module(
         "test_rider_event_hooks_module",
-        "restaurant_agent_core.watomation/routers/rider_event_hooks.py",
+        "restaurant_agent_runtime.watomation/routers/rider_event_hooks.py",
         monkeypatch,
         {
             "config": config_stub,
-            "restaurant_agent_core.config.params": params_module,
+            "restaurant_agent_runtime.config.params": params_module,
             "sfcs_agent.rest_agent.agent_runner": runner_module,
         },
     )

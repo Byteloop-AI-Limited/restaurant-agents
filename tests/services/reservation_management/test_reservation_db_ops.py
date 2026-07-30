@@ -27,7 +27,7 @@ from tests._stubs.pool_stub import FakeAsyncPool
 def reservation_module(monkeypatch):
     return load_module(
         "test_reservation_module",
-        "restaurant_agent_core.services/reservation_management/reservation_db_ops.py",
+        "restaurant_agent_runtime.services/reservation_management/reservation_db_ops.py",
         monkeypatch,
     )
 

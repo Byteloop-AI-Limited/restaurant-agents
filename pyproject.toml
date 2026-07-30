@@ -1,12 +1,12 @@
 [tool.uv.workspace]
 members = [
-    "packages/restaurant-agent-core",
+    "packages/restaurant-agent-runtime",
     "apps/sfcs",
     "apps/bnat",
 ]
 
 [tool.uv.sources]
-restaurant-agent-core = { workspace = true }
+restaurant-agent-runtime = { workspace = true }
 
 [dependency-groups]
 dev = [
@@ -28,7 +28,7 @@ asyncio_mode = "auto"
 testpaths = ["tests", "apps/sfcs/tests", "apps/bnat/tests"]
 norecursedirs = ["tests/legacy_contract"]
 pythonpath = [
-    "packages/restaurant-agent-core/src",
+    "packages/restaurant-agent-runtime/src",
     "apps/sfcs/src",
     "apps/bnat/src",
 ]

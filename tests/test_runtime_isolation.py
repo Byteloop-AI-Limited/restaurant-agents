@@ -6,13 +6,13 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from restaurant_agent_core import (
+from restaurant_agent_runtime import (
     RestaurantIdentity,
     RestaurantPresentation,
     RestaurantSettingsBundle,
 )
-from restaurant_agent_core.config.waba_setting import WabaBusinessSettings
-from restaurant_agent_core.web import AgentBindings, create_restaurant_app
+from restaurant_agent_runtime.config.waba_setting import WabaBusinessSettings
+from restaurant_agent_runtime.web import AgentBindings, create_restaurant_app
 
 
 class FakeDatabase:
@@ -155,7 +155,7 @@ def test_details_exposes_selected_runtime_identity_without_raw_secrets(
     rest_ref, namespace, monkeypatch
 ):
     monkeypatch.setattr(
-        "restaurant_agent_core.waba_callback._restaurant_master_details",
+        "restaurant_agent_runtime.waba_callback._restaurant_master_details",
         lambda selected_rest_ref: {
             "admins": [f"{selected_rest_ref}-admin"],
             "service_hours": {"monday": [["10:00", "22:00"]]},
@@ -272,7 +272,7 @@ def test_async_waba_client_enables_signature_validation(monkeypatch):
             captured.update(kwargs)
 
     monkeypatch.setattr(
-        "restaurant_agent_core.config.waba_setting.WhatsApp", FakeWhatsApp
+        "restaurant_agent_runtime.config.waba_setting.WhatsApp", FakeWhatsApp
     )
     settings = WabaBusinessSettings.for_namespace("bnat", _waba_values("bnat"))
     server = object()
@@ -292,7 +292,7 @@ def test_sync_waba_client_uses_waba_account_id(monkeypatch):
             captured.update(kwargs)
 
     monkeypatch.setattr(
-        "restaurant_agent_core.config.waba_setting.WhatsAppSync", FakeWhatsAppSync
+        "restaurant_agent_runtime.config.waba_setting.WhatsAppSync", FakeWhatsAppSync
     )
     settings = WabaBusinessSettings.for_namespace("bnat", _waba_values("bnat"))
     settings.create_sync_client()
@@ -313,7 +313,7 @@ def test_app_packages_do_not_import_each_other_or_global_wa_clients():
     core_source = "\n".join(
         path.read_text()
         for path in (
-            repo_root / "packages/restaurant-agent-core/src/restaurant_agent_core"
+            repo_root / "packages/restaurant-agent-runtime/src/restaurant_agent_runtime"
         ).rglob("*.py")
     )
 

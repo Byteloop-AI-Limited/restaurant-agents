@@ -1,211 +1,212 @@
----
-# Feature: Delivery WhatsApp Agent
-The Elai delivery WhatsApp agent orchestrates menu browsing, ordering, and delivery updates through a LangGraph workflow backed by PostgreSQL checkpoints. It exists to keep conversation state synchronized with Supabase/Ordelo data and WhatsApp interactions, allowing automated but tool-driven responses. In multi-agent mode, delivery supports explicit handoff to takeaway when customer intent changes and routes unsupported dine-in/reservation requests back to triage, while preserving thread context and transfer safety guards.
+# Feature: Shared Delivery WhatsApp Agent
+
+The delivery agent is one standard node in the shared Restaurant Agent runtime.
+It handles address capture and confirmation, minimum-order checks, menu
+delivery, payment status, customer updates, rider allocation, live location,
+and handoffs. Its implementation and standard tools are shared; each restaurant
+application supplies its own complete delivery prompt and may use the documented
+customization seams.
+
+See [the multi-agent system overview](./multi_agent_system.md) and
+[the interactive composition guide](./guides/agent-runtime-composition.html)
+for the complete ownership model.
 
 ---
 
 ## Human-Friendly Code Map
-- [Agent runner entrypoint](./rest_agent/agent_runner.py)
-- [Delivery agent graph and tools](./rest_agent/agents/delivery.py)
-- [WhatsApp sending helpers](./rest_agent/agent_wa_senders.py)
-- [LLM prompt for delivery agent (multi-agent)](./rest_agent/agents/prompts/delivery_multiagent_prompt.md)
-- [Incoming WhatsApp message handler](./watomation/on_message_graph_handler.py)
-- [Callback button handler](./watomation/on_callback_handler.py)
-- [WhatsApp Flow (address form) handler](./watomation/on_flow_request_postcode_search.py)
-- [Catalog order handler](./watomation/on_order_handler.py)
-- [Order/payment webhook router](./watomation/routers/order_event_hooks.py)
-- [Rider event webhooks](./watomation/routers/rider_event_hooks.py)
-- [Payment webhook (Stripe) handler](./watomation/routers/payment_hooks_tbd.py)
-- [Thread timeout hooks](./watomation/routers/thread_hooks.py)
 
-### Detailed Flow Explanation
-1. Entry points (message, button callback, flow completion, order/payment/rider webhooks, and stale-thread cleanup) call `run_elai_graph_with_custom_msg` with human/system/tool instructions plus optional state updates to nudge the graph.
-2. `run_elai_graph_with_custom_msg` compiles the delivery graph with a Postgres checkpointer, builds `ContextSchema` (WhatsApp client, pools, recipient), fetches or reuses thread config, and seeds welcome guidance when a new thread arrives with a known `wa_name`.
-3. Incoming prompts are normalized into LangChain messages (`SystemMessage`, `AIMessage`, `HumanMessage`), merged with optional `state_update_dict` applied to `toolNode` for immediate state mutation before graph execution.
-4. The compiled `builder` graph (`setupNode` → `deliveryAgent` → optional `toolNode`) runs via `graph.ainvoke`, preserving conversation history and returning the new AI message; outbound WhatsApp sends are executed inside agent/tool nodes when needed.
-5. `setup_node` hydrates customer address/min-order context from Supabase, seeds journey instructions as `SystemMessage`, or requests address capture for new users before handing off to the main agent node.
-6. `agent_node` feeds state into the LLM agent (built from `delivery_multiagent_prompt.md` and registered tools). Tool calls route to `ToolNode`, while plain replies are pushed to WhatsApp and the turn ends.
-7. Tool implementations in `delivery.py` delegate side effects to `agent_wa_senders.py` (welcome/menu/address flows, live location buttons) and Ordelo/payment services, updating state flags for address confirmation, min order value, order IDs, payment status, rider allocation, and termination.
-8. External events keep the conversation aligned: order handlers attach order_id/order_number, payment hooks flip `is_payment_successful`, rider hooks broadcast driver allocation/pickup/arrival, and thread hooks terminate inactive sessions via `terminate_conversation`.
-9. Explicit takeaway intent triggers `transfer_to_takeaway`, and unsupported dine-in/reservation intent triggers `transfer_to_triage`. The prompt requires tool-call-only transfer responses (no extra text) for these handoffs.
-10. Shared transfer guards in `agent_harness.py` are applied before handoff: transfer is blocked while `retain_thread=True` (active retained flow).
+- [Standard graph adapter and runner](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agent_runner.py)
+- [Delivery agent and ordered tools](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agents/delivery.py)
+- [Shared state, context, handoffs, and menu tools](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agents/agent_harness.py)
+- [Fixed multi-agent graph](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agents/multi_agent.py)
+- [WhatsApp sending helpers](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agent_wa_senders.py)
+- [Inbound message handler](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/watomation/on_message_graph_handler.py)
+- [Callback handlers](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/watomation/on_callback_handler.py)
+- [Order event router](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/watomation/routers/order_event_hooks.py)
+- [Rider event router](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/watomation/routers/rider_event_hooks.py)
+- [Thread router](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/watomation/routers/thread_hooks.py)
+- [SFCS delivery prompt](../apps/sfcs/src/sfcs_agent/rest_agent/prompts/delivery_multiagent_prompt.md)
+- [BNAT delivery prompt](../apps/bnat/src/bnat_agent/rest_agent/prompts/delivery_multiagent_prompt.md)
 
-### Code References (Machine-Readable)
-file: rest_agent/agent_runner.py
-symbol: run_elai_graph_with_custom_msg
-feature: Delivery WhatsApp Agent
+## Ownership and Composition
+
+- The shared runtime owns `build_delivery_agent`, its thirteen ordered default
+  tools, `AgentState`, `ContextSchema`, middleware, graph routing, checkpointing,
+  repair, debug behavior, and common WhatsApp helpers.
+- Each app owns a complete `delivery_multiagent_prompt.md` and loads it through
+  `rest_agent/agent_recipe.py`.
+- `RestaurantGraphAdapter` injects the app runtime's selected model and complete
+  delivery prompt into `build_delivery_agent`.
+- The same `RestaurantRuntime.async_wa_client` is placed in `ContextSchema`, so
+  delivery tools send through the exact client bound to the running app.
+
+## Detailed Flow Explanation
+
+1. A WhatsApp message, callback, or internal event reaches a shared handler that
+   depends on the app's `GraphAdapter`.
+2. `handle_wa_msg_in_graph()` forwards customer text, recipient, and WhatsApp
+   display name to `graph_adapter.run_rest_graph_with_custom_msg()`.
+3. The adapter compiles the pre-built three-node graph with a PostgreSQL
+   checkpointer for the operation, resolves the app-prefixed thread, and creates
+   `ContextSchema` from the exact `RestaurantRuntime`.
+4. `route_initial()` follows the persisted `active_agent`. Selecting Delivery or
+   calling `transfer_to_delivery` sets it to `delivery_agent`.
+5. `build_delivery_agent()` creates the native LangChain agent with the
+   app-owned complete prompt, shared state/context schemas, common WhatsApp
+   middleware, thirteen ordered default tools, and any app-owned extra tools.
+6. Address tools capture, update, and confirm customer location. The minimum
+   order tool checks delivery eligibility before the delivery menu tool sends a
+   restaurant-specific menu link.
+7. Payment, order, and rider tools read and update shared graph state and use
+   injected runtime resources rather than application imports or module-global
+   WhatsApp clients.
+8. Order and rider routers validate `rest_ref` against the running app before
+   scheduling graph work. Payment completion activates `delivery_agent`, records
+   order/payment state, and retains the thread while driver assignment is
+   pending.
+9. `transfer_to_takeaway` handles a service change.
+   `transfer_to_triage` handles out-of-scope intent. Shared transfer guards can
+   block a handoff while retained delivery work is active.
+10. `cleanup_before_model` and `respond_on_wa` coordinate tool-only turns,
+    `/DoNotRespond:` markers, and outbound WhatsApp responses.
+
+## Ordered Default Tools
+
+1. `send_welcome_msg`
+2. `answer_general_query`
+3. `confirm_delivery_address`
+4. `capture_delivery_address`
+5. `update_address_of_existing_user`
+6. `calculate_min_order_value`
+7. `send_restaurant_menu_tool`
+8. `verify_if_payment_complete`
+9. `send_updates_to_customer`
+10. `check_delivery_driver_allocation_status`
+11. `send_rider_live_location_link`
+12. `transfer_to_takeaway`
+13. `transfer_to_triage`
+
+The ordered list is part of the shared graph contract and is asserted in
+`tests/rest_agent/test_graph_contract.py`.
+
+## Delivery Customization
+
+### Prompt-only behavior
+
+Edit the owning app's complete delivery prompt. Do not copy or modify the shared
+delivery implementation for wording, policies, restaurant identity, or
+tool-use instructions.
+
+### Additional delivery tool
+
+Keep the native tool in the app and bind it through:
+
+```python
+extra_tools_by_agent={"delivery_agent": [custom_delivery_tool]}
+```
+
+Extra tools append after the standard list.
+
+### Complete delivery-agent replacement
+
+Use:
+
+```python
+agent_overrides={"delivery_agent": CUSTOM_DELIVERY_AGENT}
+```
+
+The runnable must expose `ainvoke` and preserve the fixed node name, shared
+state/context, and handoff contract.
+
+### Incompatible delivery graph
+
+An app owns a complete `GraphAdapter` if delivery requires a new node,
+incompatible state fields/reducers, changed routing/handoffs, or different
+checkpointing, compilation, repair, or debug semantics.
+
+## Code References (Machine-Readable)
+
+```code-ref
+file: packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agent_runner.py
+symbol: run_rest_graph_with_custom_msg
+feature: delivery-whatsapp-agent
 description: >
-  Executes the delivery LangGraph with optional custom messages and state updates, wiring context (DB pool, WhatsApp client) and returning the latest AI reply content.
+  Runs the shared graph with PostgreSQL checkpointing and a ContextSchema built from the exact application runtime.
+```
 
-file: rest_agent/agents/delivery.py
-symbol: AgentState
-feature: Delivery WhatsApp Agent
+```code-ref
+file: packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agents/delivery.py
+symbol: build_delivery_agent
+feature: delivery-whatsapp-agent
 description: >
-  Defines the structured state tracked across the delivery conversation, covering messages, address, payment, rider, and order-type flags.
+  Constructs the delivery LangChain agent from an injected model, complete app-owned prompt, shared schemas, middleware, default tools, and optional extra tools.
+```
 
-file: rest_agent/agents/delivery.py
-symbol: ContextSchema
-feature: Delivery WhatsApp Agent
-description: >
-  Carries runtime resources (Postgres pool, WhatsApp client, recipient, Ordelo client) into graph nodes and tools.
-
-file: rest_agent/agents/delivery.py
-symbol: setup_node
-feature: Delivery WhatsApp Agent
-description: >
-  Prepares the graph turn by fetching customer address data, emitting journey guidance, or prompting address capture before entering the main agent.
-
-file: rest_agent/agents/delivery.py
-symbol: agent_node
-feature: Delivery WhatsApp Agent
-description: >
-  Runs the LLM agent, forwards tool calls to ToolNode, or sends direct WhatsApp replies while cleaning /DoNotRespond scaffolding.
-
-file: rest_agent/agents/delivery.py
-symbol: delivery_agent
-feature: Delivery WhatsApp Agent
-description: >
-  LLM agent built from the delivery prompt and registered tools with parallel calls disabled for sequential flow control.
-
-file: rest_agent/agents/delivery.py
+```code-ref
+file: packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agents/delivery.py
 symbol: delivery_tools
-feature: Delivery WhatsApp Agent
+feature: delivery-whatsapp-agent
 description: >
-  Multi-agent delivery toolset that includes transfer_to_takeaway for collection service-switch handoff and transfer_to_triage for unsupported dine-in/reservation requests.
+  Defines the ordered standard delivery capabilities and triage/takeaway handoffs.
+```
 
-file: rest_agent/agents/prompts/delivery_multiagent_prompt.md
-symbol: (prompt document)
-feature: Delivery WhatsApp Agent
+```code-ref
+file: packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agents/agent_harness.py
+symbol: ContextSchema
+feature: delivery-whatsapp-agent
 description: >
-  Multi-agent prompt guidance that requires immediate tool-call transfer for explicit takeaway intent and triage transfer for unsupported dine-in/reservation intent.
+  Carries the exact runtime WhatsApp client, recipient, database resources, restaurant identity, presentation, and project settings into delivery tools.
+```
 
-file: rest_agent/agents/delivery.py
-symbol: send_welcome_msg
-feature: Delivery WhatsApp Agent
-description: >
-  Sends personalized greeting plus delivery/takeaway buttons and marks the turn complete with non-response marker.
-
-file: rest_agent/agents/delivery.py
+```code-ref
+file: packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agents/delivery.py
 symbol: capture_delivery_address
-feature: Delivery WhatsApp Agent
+feature: delivery-whatsapp-agent
 description: >
-  Triggers address update flow for new users and halts the graph after emitting tool and AI messages.
+  Starts address capture or update behavior through runtime-bound WhatsApp and order-service resources.
+```
 
-file: rest_agent/agents/delivery.py
-symbol: confirm_delivery_address
-feature: Delivery WhatsApp Agent
-description: >
-  Sends address confirmation buttons or acknowledges existing confirmation, guiding next steps via ToolMessage updates.
-
-file: rest_agent/agents/delivery.py
+```code-ref
+file: packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agents/delivery.py
 symbol: calculate_min_order_value
-feature: Delivery WhatsApp Agent
+feature: delivery-whatsapp-agent
 description: >
-  Looks up location-aware minimum order value, marks outside-area cases, and instructs menu sending when eligible.
+  Resolves delivery eligibility and the minimum order value from the injected restaurant context.
+```
 
-file: rest_agent/agents/delivery.py
+```code-ref
+file: packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agents/delivery.py
 symbol: send_restaurant_menu_tool
-feature: Delivery WhatsApp Agent
+feature: delivery-whatsapp-agent
 description: >
-  Dispatches the WhatsApp restaurant menu (delivery or takeaway) and pauses for user selection.
+  Sends the delivery menu only after address capture and confirmation guards pass.
+```
 
-file: rest_agent/agents/delivery.py
-symbol: verify_if_payment_complete
-feature: Delivery WhatsApp Agent
-description: >
-  Checks payment status in Ordelo, updates state, and informs customer about driver assignment or pickup timing.
-
-file: rest_agent/agents/delivery.py
-symbol: check_delivery_driver_allocation_status
-feature: Delivery WhatsApp Agent
-description: >
-  Polls driver assignment via Ordelo and notifies the customer, including timeout handling.
-
-file: rest_agent/agents/delivery.py
-symbol: send_rider_live_location_link
-feature: Delivery WhatsApp Agent
-description: >
-  Validates and shares live rider location via WhatsApp buttons, updating state with tool feedback.
-
-file: rest_agent/agents/delivery.py
-symbol: send_updates_to_customer
-feature: Delivery WhatsApp Agent
-description: >
-  Sends arbitrary status updates to the customer and mirrors them into conversation state.
-
-file: rest_agent/agents/delivery.py
-symbol: terminate_conversation
-feature: Delivery WhatsApp Agent
-description: >
-  Marks threads inactive, sends goodbye messaging, and ends the graph turn with termination metadata.
-
-file: rest_agent/agent_wa_senders.py
-symbol: delivery_or_takeaway
-feature: Delivery WhatsApp Agent
-description: >
-  Presents delivery/takeaway buttons used in welcomes and order-type selection callbacks.
-
-file: rest_agent/agent_wa_senders.py
-symbol: confirm_delivery_address_wa
-feature: Delivery WhatsApp Agent
-description: >
-  Sends interactive address confirmation buttons that drive subsequent callback handling.
-
-file: watomation/on_message_graph_handler.py
-symbol: handle_wa_msg_in_graph
-feature: Delivery WhatsApp Agent
-description: >
-  Primary inbound WhatsApp text handler that forwards user messages and wa_name into the delivery graph runner.
-
-file: watomation/on_callback_handler.py
-symbol: delivery_or_takeaway_selection
-feature: Delivery WhatsApp Agent
-description: >
-  Processes delivery/takeaway button callbacks, sets is_delivery state, and re-enters the graph.
-
-file: watomation/on_flow_request_postcode_search.py
-symbol: on_pc_search_complete
-feature: Delivery WhatsApp Agent
-description: >
-  Handles completed address form submissions, persists address, updates graph state, and resumes the flow via system prompt.
-
-file: watomation/on_order_handler.py
-symbol: handle_order
-feature: Delivery WhatsApp Agent
-description: >
-  Ingests WhatsApp catalog orders, validates against min order value, stores order details, and triggers graph updates.
-
-file: watomation/routers/order_event_hooks.py
+```code-ref
+file: packages/restaurant-agent-runtime/src/restaurant_agent_runtime/watomation/routers/order_event_hooks.py
 symbol: payment_complete
-feature: Delivery WhatsApp Agent
+feature: delivery-whatsapp-agent
 description: >
-  Webhook endpoint marking payments complete, sending receipts, and updating graph state for driver allocation messaging.
+  Validates the target app and payload identity, acknowledges payment, updates delivery graph state, and schedules runtime-bound graph work.
+```
 
-file: watomation/routers/rider_event_hooks.py
+```code-ref
+file: packages/restaurant-agent-runtime/src/restaurant_agent_runtime/watomation/routers/rider_event_hooks.py
 symbol: rider_inflight
-feature: Delivery WhatsApp Agent
+feature: delivery-whatsapp-agent
 description: >
-  Rider assignment webhook that updates graph state to mark driver allocation and prompts customer notification.
+  Validates the restaurant route and schedules customer notification and delivery-state updates through the injected adapter.
+```
 
-file: watomation/routers/payment_hooks_tbd.py
-symbol: handle_payment_complete
-feature: Delivery WhatsApp Agent
-description: >
-  Stripe webhook processor that flips payment status in Ordelo and asks the agent to verify payment completion.
+## Edge Cases
 
-file: watomation/routers/thread_hooks.py
-symbol: terminate_stale_active_threads
-feature: Delivery WhatsApp Agent
-description: >
-  Scheduled cleanup that closes inactive threads via the agent runner unless threads are explicitly retained.
-
-### Edge Cases
-- No stored address → `setup_node` routes to address capture; confirmation tool blocks progression until state flips true.
-- Min order lookup returns None or -1 → state marks `is_outside_delivery_area` and resets order type to prevent ordering.
-- Order total below min value → `handle_order` injects system warning and stops payment flow.
-- Payment not completed or webhook mismatch → agent keeps `is_payment_successful` false and prompts completion.
-- Explicit takeaway or dine-in intent while in delivery → multi-agent delivery prompt/tooling transfers immediately to the appropriate agent.
-- Rider allocation timeout/unavailability → `check_delivery_driver_allocation_status` or timed-out hooks notify cancellation and may trigger payment reversal.
-- Stale conversation threads without `retain_thread` → thread hooks end the session via `terminate_conversation`.
-- Transfer requested while `retain_thread=True` → shared transfer guard blocks handoff until retained flow state is resolved.
-- Live location fetch failure → `send_rider_live_location_link` sends fallback text instead of button.
+- Missing or unconfirmed address prevents delivery menu progression.
+- A minimum-order lookup that cannot establish eligibility prevents ordering.
+- Recipient or thread mismatch in payment events returns `400`.
+- A cross-restaurant route returns `404` before graph work or external effects.
+- Driver allocation or live-location failure produces fallback customer
+  messaging.
+- `retain_thread=True` can block handoff while active delivery work must finish.
+- A menu-send `ValueError` sends fallback text and ends the turn.
+- Malformed persisted tool-call tails are repaired before model invocation; an
+  unrecoverable mismatch terminates the session.

@@ -62,22 +62,22 @@ def lg_utils_module(monkeypatch):
 
     langchain_openai.ChatOpenAI = FakeChatOpenAI
 
-    thread_handlers_module = ModuleType("restaurant_agent_core.services.thread_handlers")
+    thread_handlers_module = ModuleType("restaurant_agent_runtime.services.thread_handlers")
     thread_handlers_module.ThreadHandlerLocal = object
 
-    thread_management_module = ModuleType("restaurant_agent_core.services.thread_management")
+    thread_management_module = ModuleType("restaurant_agent_runtime.services.thread_management")
     thread_management_module.ThreadHandler = object
 
     return load_module(
         "test_lg_utils_module",
-        "restaurant_agent_core.services/lg_utils.py",
+        "restaurant_agent_runtime.services/lg_utils.py",
         monkeypatch,
         {
             "config": config_stub,
             "openai": openai_module,
             "langchain_openai": langchain_openai,
-            "restaurant_agent_core.services.thread_handlers": thread_handlers_module,
-            "restaurant_agent_core.services.thread_management": thread_management_module,
+            "restaurant_agent_runtime.services.thread_handlers": thread_handlers_module,
+            "restaurant_agent_runtime.services.thread_management": thread_management_module,
         },
     )
 
