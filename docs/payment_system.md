@@ -37,7 +37,7 @@ The Elai payment system integrates Stripe for customer payments on food orders p
 2. `payment_complete_path` extracts the JSON body and delegates to `handle_payment_complete` via `BackgroundTasks`.
 3. `handle_payment_complete` extracts `orderID` from `data.object.metadata.orderID` in the Stripe event payload.
 4. Updates `food_order.payment_status` to `requires_capture` in Supabase.
-5. Invokes `run_elai_graph_with_custom_msg` to tell the agent to verify payment completion.
+5. Invokes `run_rest_graph_with_custom_msg` to tell the agent to verify payment completion.
 
 *Path B: Via `order_event_hooks.py` (Ordelo-mediated webhook)*
 1. The Ordelo payment service calls `POST /order-event-hooks/{rest_ref}/payment-complete/{recipient}/{thread_id}` with a `FoodOrder`-shaped body.

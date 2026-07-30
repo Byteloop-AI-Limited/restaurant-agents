@@ -26,7 +26,7 @@ from tests._stubs.pool_stub import FakeAsyncPool
 def order_db_ops(monkeypatch):
     return load_module(
         "test_order_management_order_db_ops_module",
-        "restaurant_agent_core.services/order_management/order_db_ops.py",
+        "restaurant_agent_runtime.services/order_management/order_db_ops.py",
         monkeypatch,
     )
 

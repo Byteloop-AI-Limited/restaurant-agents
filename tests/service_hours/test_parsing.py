@@ -2,12 +2,12 @@ from datetime import time
 
 import pytest
 
-from restaurant_agent_core.services.service_hours.parsing import (
+from restaurant_agent_runtime.services.service_hours.parsing import (
     parse_intervals_for_day,
     parse_week,
     to_minutes,
 )
-from restaurant_agent_core.services.service_hours.types import Interval, Weekday
+from restaurant_agent_runtime.services.service_hours.types import Interval, Weekday
 
 
 def test_to_minutes_string():

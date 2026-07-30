@@ -11,7 +11,7 @@ The Elai system exposes a set of FastAPI routers that receive external webhook e
 - [Thread lifecycle hooks router](./watomation/routers/thread_hooks.py)
 - [Stripe payment webhook router](./watomation/routers/payment_hooks_tbd.py)
 - [Offline mode sub-application](./watomation/routers/offline_mode.py)
-- [Agent graph runner](./rest_agent/agent_runner.py)
+- [Agent graph runner](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agent_runner.py)
 
 ### Detailed Flow Explanation
 
@@ -40,7 +40,7 @@ The Elai system exposes a set of FastAPI routers that receive external webhook e
 4. `/SelectService` -> `select_service_handler` (service selection and agent handoff).
 
 **4. Rider Event Hooks (`/rider-event-hooks`)**
-1. `POST /{rest_ref}/rider-inflight` - Rider accepts delivery. Parses `DeliverySummary` from body, extracts confirmation code, runs `run_elai_graph_with_custom_msg` as background task to notify customer and set `is_delivery_rider_assigned=True`.
+1. `POST /{rest_ref}/rider-inflight` - Rider accepts delivery. Parses `DeliverySummary` from body, extracts confirmation code, runs `run_rest_graph_with_custom_msg` as background task to notify customer and set `is_delivery_rider_assigned=True`.
 2. `POST /{rest_ref}/on-restaurant-cc/{order_number}/{customer_id}` - Food picked up from restaurant. Sets `is_delivery_picked_up=True` and provides `rider_live_location_url` via background task.
 3. `POST /{rest_ref}/on-customer-cc/{order_number}/{customer_id}` - Delivery confirmed to customer. Runs a two-step background sequence: first sends a delivery success message via `send_updates_to_customer`, then after a 5-second delay terminates the conversation via `terminate_conversation`.
 4. `POST /{rest_ref}/on-restaurant-enter/{order_number}` - Rider enters restaurant zone. Notifies customer via background task. Reads `customer_id` from request body `delivery_summary`.
@@ -63,7 +63,7 @@ The Elai system exposes a set of FastAPI routers that receive external webhook e
 8. `POST /hil-system-message` - Human-in-the-loop intervention. Accepts `HILMessageRequest` with `thread_id`, `update_message`, optional `recipient`, and optional `state_update_dict`. If recipient is missing, looks up active thread in Supabase. Invokes `send_updates_to_customer` tool via the graph and returns the AI response.
 
 **7. Payment Hooks (`/payment-hooks` - currently not registered)**
-1. `POST /payment-complete` - Stripe webhook for payment completion. Extracts `orderID` from Stripe event metadata. Updates `food_order.payment_status` to `requires_capture` in Supabase. Invokes graph to verify payment via `run_elai_graph_with_custom_msg` as background task.
+1. `POST /payment-complete` - Stripe webhook for payment completion. Extracts `orderID` from Stripe event metadata. Updates `food_order.payment_status` to `requires_capture` in Supabase. Invokes graph to verify payment via `run_rest_graph_with_custom_msg` as background task.
 
 **8. Offline Mode (`/offline-mode` - mounted sub-app)**
 1. Separate `FastAPI` app with its own `WhatsApp` client instance.
@@ -94,7 +94,7 @@ feature: Webhook Endpoints
 description: >
   Handles /SelectService callbacks, routes to delivery/takeaway/triage based on active_agent, and sends service selection buttons when rest_ref is present but no agent is selected.
 
-file: packages/restaurant-agent-core/src/restaurant_agent_core/web/app_factory.py
+file: packages/restaurant-agent-runtime/src/restaurant_agent_runtime/web/app_factory.py
 symbol: runtime_details
 feature: Webhook Endpoints
 description: >
@@ -282,4 +282,4 @@ default `LOG_LEVEL=info` stays quiet — measured at ~2.7 µs and 0 log bytes pe
 - Payment hooks router (`payment_hooks_tbd`) is defined but not included in the app; Stripe webhooks currently route through the order event hooks `payment_complete` endpoint instead.
 - Delivery timeout -> notifies customer that no drivers are available, suggests takeaway, and informs of automatic payment refund. Does not terminate the conversation.
 - Offline mode already active when `set_offline_mode(enable=True)` called -> returns early with "Already in offline mode" message.
-- `delivery_summary` missing `customer_id` in rider enter endpoints -> potential `None` passed to `run_elai_graph_with_custom_msg`, which would fail silently in background task.
+- `delivery_summary` missing `customer_id` in rider enter endpoints -> potential `None` passed to `run_rest_graph_with_custom_msg`, which would fail silently in background task.

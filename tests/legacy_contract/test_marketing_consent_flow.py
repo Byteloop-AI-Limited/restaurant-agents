@@ -63,7 +63,7 @@ class UpdateCustRestMapRequestStub(BaseModel):
 
 def _build_dedup_stub() -> ModuleType:
     """Passthrough stub for watomation.dedup so SimpleNamespace fakes need no .id."""
-    module = ModuleType("restaurant_agent_core.watomation.dedup")
+    module = ModuleType("restaurant_agent_runtime.watomation.dedup")
     module.wa_dedup = lambda fn: fn
     module._check_and_record = lambda _id: False
     return module
@@ -72,7 +72,7 @@ def _build_dedup_stub() -> ModuleType:
 def _load_module(
     module_name: str, file_path: Path, monkeypatch, stubs: dict[str, ModuleType]
 ):
-    stubs = {"restaurant_agent_core.watomation.dedup": _build_dedup_stub(), **stubs}
+    stubs = {"restaurant_agent_runtime.watomation.dedup": _build_dedup_stub(), **stubs}
     for name, module in stubs.items():
         monkeypatch.setitem(sys.modules, name, module)
 
@@ -227,7 +227,7 @@ def _build_triage_stubs(send_spy):
     senders_module.send_welcome_msg_wa = send_welcome_msg_wa
     senders_module.select_marketing_consent_wa_send = select_marketing_consent_wa_send
 
-    lg_utils_module = ModuleType("restaurant_agent_core.services.lg_utils")
+    lg_utils_module = ModuleType("restaurant_agent_runtime.services.lg_utils")
     lg_utils_module.llm_settings = SimpleNamespace(llm_client_single_tool_turn=object())
 
     return {
@@ -236,7 +236,7 @@ def _build_triage_stubs(send_spy):
         "langchain.agents.middleware": langchain_agents_middleware,
         "sfcs_agent.rest_agent.agents.agent_harness": harness_module,
         "sfcs_agent.rest_agent.agent_wa_senders": senders_module,
-        "restaurant_agent_core.services.lg_utils": lg_utils_module,
+        "restaurant_agent_runtime.services.lg_utils": lg_utils_module,
     }
 
 
@@ -343,11 +343,11 @@ def _build_callback_stubs(run_calls, update_calls, logger):
     agent_runner.run_rest_graph_with_custom_msg = run_rest_graph_with_custom_msg
 
     request_module = ModuleType(
-        "restaurant_agent_core.services.ordelo_service.datamodels.customer_master_pymodel"
+        "restaurant_agent_runtime.services.ordelo_service.datamodels.customer_master_pymodel"
     )
     request_module.UpdateCustRestMapRequest = UpdateCustRestMapRequestStub
 
-    service_module = ModuleType("restaurant_agent_core.services.ordelo_service.ordelo_service")
+    service_module = ModuleType("restaurant_agent_runtime.services.ordelo_service.ordelo_service")
 
     class OrdeloService:
         def __init__(self, rest_ref):
@@ -363,8 +363,8 @@ def _build_callback_stubs(run_calls, update_calls, logger):
         "config": config_module,
         "sfcs_agent.rest_agent.agent_wa_senders": agent_wa_senders,
         "sfcs_agent.rest_agent.agent_runner": agent_runner,
-        "restaurant_agent_core.services.ordelo_service.datamodels.customer_master_pymodel": request_module,
-        "restaurant_agent_core.services.ordelo_service.ordelo_service": service_module,
+        "restaurant_agent_runtime.services.ordelo_service.datamodels.customer_master_pymodel": request_module,
+        "restaurant_agent_runtime.services.ordelo_service.ordelo_service": service_module,
     }
 
 
@@ -375,7 +375,7 @@ async def test_select_consent_handler_persists_and_resumes_graph(monkeypatch):
     logger = DummyLogger()
     callback_module = _load_module(
         "test_on_callback_handler_yes",
-        REPO_ROOT / "restaurant_agent_core.watomation/on_callback_handler.py",
+        REPO_ROOT / "restaurant_agent_runtime.watomation/on_callback_handler.py",
         monkeypatch,
         _build_callback_stubs(
             run_calls,
@@ -421,7 +421,7 @@ async def test_select_consent_handler_decline_persists_false(monkeypatch):
     logger = DummyLogger()
     callback_module = _load_module(
         "test_on_callback_handler_no",
-        REPO_ROOT / "restaurant_agent_core.watomation/on_callback_handler.py",
+        REPO_ROOT / "restaurant_agent_runtime.watomation/on_callback_handler.py",
         monkeypatch,
         _build_callback_stubs(
             run_calls,
@@ -459,7 +459,7 @@ async def test_select_consent_handler_ignores_invalid_payload(monkeypatch):
     logger = DummyLogger()
     callback_module = _load_module(
         "test_on_callback_handler_invalid",
-        REPO_ROOT / "restaurant_agent_core.watomation/on_callback_handler.py",
+        REPO_ROOT / "restaurant_agent_runtime.watomation/on_callback_handler.py",
         monkeypatch,
         _build_callback_stubs(
             run_calls,

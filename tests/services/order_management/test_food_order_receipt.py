@@ -36,30 +36,30 @@ def receipt_module(monkeypatch):
         }
     )
 
-    pricing_module = ModuleType("restaurant_agent_core.services.pricing_ms")
+    pricing_module = ModuleType("restaurant_agent_runtime.services.pricing_ms")
     pricing_module.get_final_order_value = lambda **kwargs: {}
 
     food_order_module = load_module(
         "test_receipt_food_order_pymodel_module",
-        "restaurant_agent_core.services/order_management/food_order_pymodel.py",
+        "restaurant_agent_runtime.services/order_management/food_order_pymodel.py",
         monkeypatch,
-        {"config": config_stub, "restaurant_agent_core.services.pricing_ms": pricing_module},
+        {"config": config_stub, "restaurant_agent_runtime.services.pricing_ms": pricing_module},
     )
     order_db_ops_new_module = load_module(
         "test_receipt_order_db_ops_new_module",
-        "restaurant_agent_core.services/order_management/order_db_ops_new.py",
+        "restaurant_agent_runtime.services/order_management/order_db_ops_new.py",
         monkeypatch,
         {"config": config_stub},
     )
 
     module = load_module(
         "test_food_order_receipt_module",
-        "restaurant_agent_core.services/order_management/food_order_reciept.py",
+        "restaurant_agent_runtime.services/order_management/food_order_reciept.py",
         monkeypatch,
         {
             "config": config_stub,
-            "restaurant_agent_core.services.order_management.food_order_pymodel": food_order_module,
-            "restaurant_agent_core.services.order_management.order_db_ops_new": order_db_ops_new_module,
+            "restaurant_agent_runtime.services.order_management.food_order_pymodel": food_order_module,
+            "restaurant_agent_runtime.services.order_management.order_db_ops_new": order_db_ops_new_module,
         },
     )
     module._config_stub = config_stub

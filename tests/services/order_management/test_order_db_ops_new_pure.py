@@ -19,7 +19,7 @@ from tests._stubs.loader import load_module
 def order_db_ops_new(monkeypatch):
     return load_module(
         "test_order_db_ops_new_module",
-        "restaurant_agent_core.services/order_management/order_db_ops_new.py",
+        "restaurant_agent_runtime.services/order_management/order_db_ops_new.py",
         monkeypatch,
     )
 

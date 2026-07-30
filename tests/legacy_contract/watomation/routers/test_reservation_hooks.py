@@ -34,7 +34,7 @@ def reservation_module(monkeypatch):
     )
     module = load_module(
         "test_reservation_hooks_module",
-        "restaurant_agent_core.watomation/routers/reservation_hooks.py",
+        "restaurant_agent_runtime.watomation/routers/reservation_hooks.py",
         monkeypatch,
         {"config": config_stub},
     )

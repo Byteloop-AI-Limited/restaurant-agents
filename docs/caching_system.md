@@ -94,21 +94,6 @@ restaurant = get_restaurant_master_cached("ELAS")
 admins = restaurant.get_admins()
 ```
 
-#### `get_restaurant_webhook_url_async(rest_ref: str, webhook_type: str) -> str`
-Constructs full webhook URL by combining cached base URL with webhook path.
-
-**Parameters**:
-- `rest_ref`: Restaurant reference code
-- `webhook_type`: One of the predefined webhook types (see `WEBHOOK_PATHS`)
-
-**Returns**: Full webhook URL
-
-**Example**:
-```python
-url = await get_restaurant_webhook_url_async("ELAS", "rider-inflight")
-# Returns: "https://api.restaurant.com/rider-event-hooks/rider-inflight"
-```
-
 ### Cache Management Functions
 
 #### `reset_restaurant_base_url_cache(rest_ref: str | None = None) -> int`

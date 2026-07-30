@@ -37,7 +37,7 @@ class FakeResponse:
 def resolver_module(monkeypatch):
     return load_module(
         "test_address_resolver_module",
-        "restaurant_agent_core.services/maps_service/address_resolver.py",
+        "restaurant_agent_runtime.services/maps_service/address_resolver.py",
         monkeypatch,
         {"config": build_config_stub()},
     )

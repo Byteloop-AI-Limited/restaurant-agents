@@ -16,7 +16,7 @@ downstream dispatch has a usable timestamp.
 import asyncio
 from datetime import datetime, timedelta, timezone
 
-from restaurant_agent_core.config import client_ordelo, logger
+from restaurant_agent_runtime.config import client_ordelo, logger
 
 # Lead time applied to the simulated pickup so it lands in the near future.
 PICKUP_LEAD_TIME = timedelta(minutes=30)
@@ -88,6 +88,7 @@ ORDER_NUMBER = "BNAT-EEMF-24"
 
 # %%
 await simulate_delivery(RECIPIENT, ORDER_NUMBER)
+#
 # %% Run the simulation.
 if __name__ == "__main__":
     asyncio.run(simulate_delivery(RECIPIENT, ORDER_NUMBER))

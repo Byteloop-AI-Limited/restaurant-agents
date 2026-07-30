@@ -8,7 +8,7 @@ Unit tests for rest_agent.agents.agent_harness pure helpers
 SFCS is single-restaurant, so there is no rest_ref guard (unlike elai).
 """
 
-from sfcs_agent.rest_agent.agents.agent_harness import (
+from restaurant_agent_runtime.rest_agent.agents.agent_harness import (
     _normalize_min_order_value,
     _run_transfer_guards,
     _transfer_check_delivery_retain,

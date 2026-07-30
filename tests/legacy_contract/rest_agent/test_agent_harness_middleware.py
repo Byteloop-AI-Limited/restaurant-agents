@@ -119,7 +119,7 @@ def _patch_send_restaurant_menu(monkeypatch):
     module.send_restaurant_menu = sender
     monkeypatch.setitem(sys.modules, "sfcs_agent.rest_agent.agent_wa_senders", module)
 
-    # _send_menu_tool also does `from restaurant_agent_core.config import project_settings` lazily.
+    # _send_menu_tool also does `from restaurant_agent_runtime.config import project_settings` lazily.
     # Stamp the attribute on whatever `config` module is currently in sys.modules
     # (other test fixtures may have replaced it with a stub).
     cfg = sys.modules.get("config")

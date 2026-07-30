@@ -1,0 +1,40 @@
+[project]
+name = "restaurant-agent-runtime"
+version = "0.1.0"
+description = "Shared runtime and services for Ordelo restaurant agents"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "annotated-types",
+    "boto3",
+    "fastapi==0.128.0",
+    "gunicorn",
+    "httpx",
+    "langchain==1.2.1",
+    "langchain-google-genai==4.1.3",
+    "langchain-openai==1.1.7",
+    "langgraph==1.0.5",
+    "langgraph-checkpoint-postgres==3.0.2",
+    "loguru",
+    "msal",
+    "psycopg[binary]",
+    "psycopg-pool",
+    "pydantic>=2.11.7",
+    "pydantic-core",
+    "pydantic-settings>=2.10.1",
+    "python-dotenv",
+    "python-multipart",
+    "pytz",
+    "pywa==3.8.0",
+    "requests",
+    "supabase==2.27.1",
+    "typing-extensions>=4.8.0",
+    "uvicorn==0.40.0",
+    "uvicorn-worker",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/restaurant_agent_runtime"]

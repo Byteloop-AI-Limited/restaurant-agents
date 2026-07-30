@@ -42,7 +42,7 @@ def sender_module(monkeypatch):
     config_stub = build_config_stub()
     sent_menus = []
 
-    template_module = ModuleType("restaurant_agent_core.services.wa_templates.rest_menu_wa_template")
+    template_module = ModuleType("restaurant_agent_runtime.services.wa_templates.rest_menu_wa_template")
 
     async def send_restaurant_menu_non_carousel(recipient, rest_menu, wa_client):
         sent_menus.append((recipient, rest_menu, wa_client))
@@ -51,7 +51,7 @@ def sender_module(monkeypatch):
 
     params_module = load_module(
         "test_sender_rest_menu_query_params_module",
-        "restaurant_agent_core.services/wa_templates/rest_menu_query_params.py",
+        "restaurant_agent_runtime.services/wa_templates/rest_menu_query_params.py",
         monkeypatch,
         {"config": config_stub},
     )
@@ -62,8 +62,8 @@ def sender_module(monkeypatch):
         monkeypatch,
         {
             "config": config_stub,
-            "restaurant_agent_core.services.wa_templates.rest_menu_wa_template": template_module,
-            "restaurant_agent_core.services.wa_templates.rest_menu_query_params": params_module,
+            "restaurant_agent_runtime.services.wa_templates.rest_menu_wa_template": template_module,
+            "restaurant_agent_runtime.services.wa_templates.rest_menu_query_params": params_module,
         },
     )
     module.FlowButton = lambda **kwargs: SimpleNamespace(**kwargs)

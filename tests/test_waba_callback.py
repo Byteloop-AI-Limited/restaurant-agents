@@ -2,8 +2,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from restaurant_agent_core import RestaurantIdentity
-from restaurant_agent_core.waba_callback import (
+from restaurant_agent_runtime import RestaurantIdentity
+from restaurant_agent_runtime.waba_callback import (
     CallbackValidationError,
     build_runtime_details,
     mask_secret,
@@ -112,7 +112,7 @@ async def test_enriched_details_returns_sanitized_partial_result(monkeypatch):
         raise RuntimeError("database-sensitive-error")
 
     monkeypatch.setattr(
-        "restaurant_agent_core.waba_callback._restaurant_master_details",
+        "restaurant_agent_runtime.waba_callback._restaurant_master_details",
         unavailable_restaurant,
     )
     runtime = SimpleNamespace(

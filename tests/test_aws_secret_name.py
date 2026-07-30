@@ -39,7 +39,7 @@ def _build_boto3_stub(client):
     return module
 
 
-def _set_local_aws_settings(monkeypatch, secret_name="agent-env"):
+def _set_local_aws_settings(monkeypatch, secret_name="restaurant-agents-env"):
     monkeypatch.setenv("AWS_SETTINGS_KEY_ID", "key")
     monkeypatch.setenv("AWS_SETTINGS_ACCESS_KEY", "secret")
     monkeypatch.setenv("AWS_SETTINGS_REGION", "eu-west-2")
@@ -54,17 +54,17 @@ def test_secret_name_uses_env_var(monkeypatch):
 
     aws_setting = load_module(
         "aws_setting_under_test",
-        "restaurant_agent_core.utils/aws_setting.py",
+        "restaurant_agent_runtime.utils/aws_setting.py",
         monkeypatch,
         stubs={"boto3": boto3_stub},
     )
 
-    assert fake_client.requested_ids == ["agent-env"]
+    assert fake_client.requested_ids == ["restaurant-agents-env"]
 
     fake_client.requested_ids.clear()
     result = aws_setting.get_agent_env()
 
-    assert fake_client.requested_ids == ["agent-env"]
+    assert fake_client.requested_ids == ["restaurant-agents-env"]
     assert result == {"sentinel": "value"}
 
 
@@ -73,7 +73,7 @@ def test_explicit_secret_name_is_used_exactly(monkeypatch):
     fake_client = _FakeSecretsClient({"sentinel": "value"})
     aws_setting = load_module(
         "aws_setting_explicit_name_under_test",
-        "restaurant_agent_core.utils/aws_setting.py",
+        "restaurant_agent_runtime.utils/aws_setting.py",
         monkeypatch,
         stubs={"boto3": _build_boto3_stub(fake_client)},
     )
@@ -87,9 +87,12 @@ def test_explicit_secret_name_is_used_exactly(monkeypatch):
 
 @pytest.mark.parametrize(
     ("configured_name", "expected_name"),
-    [("lambda-agent-env", "lambda-agent-env"), (None, "agent-env")],
+    [
+        ("lambda-agent-env", "lambda-agent-env"),
+        (None, "restaurant-agents-env"),
+    ],
 )
-def test_lambda_uses_execution_role_and_generic_fallback(
+def test_lambda_startup_uses_shared_secret_and_helper_honors_override(
     monkeypatch, configured_name, expected_name
 ):
     monkeypatch.setenv("AWS_LAMBDA_FUNCTION_NAME", "restaurant-agent")
@@ -101,15 +104,24 @@ def test_lambda_uses_execution_role_and_generic_fallback(
     fake_client = _FakeSecretsClient({"sentinel": "value"})
     boto3_stub = _build_boto3_stub(fake_client)
 
-    load_module(
+    aws_setting = load_module(
         f"aws_setting_lambda_{expected_name}_under_test",
-        "restaurant_agent_core.utils/aws_setting.py",
+        "restaurant_agent_runtime.utils/aws_setting.py",
         monkeypatch,
         stubs={"boto3": boto3_stub},
     )
 
+    assert fake_client.requested_ids == ["restaurant-agents-env"]
+
+    fake_client.requested_ids.clear()
+    result = aws_setting.get_agent_env()
+
     assert fake_client.requested_ids == [expected_name]
-    assert boto3_stub.session_calls == [((), {"region_name": "eu-west-1"})]
+    assert result == {"sentinel": "value"}
+    assert boto3_stub.session_calls == [
+        ((), {"region_name": "eu-west-1"}),
+        ((), {"region_name": "eu-west-1"}),
+    ]
 
 
 def test_client_error_is_raised_as_runtime_error(monkeypatch):
@@ -117,7 +129,7 @@ def test_client_error_is_raised_as_runtime_error(monkeypatch):
     fake_client = _FakeSecretsClient({"sentinel": "value"})
     aws_setting = load_module(
         "aws_setting_client_error_under_test",
-        "restaurant_agent_core.utils/aws_setting.py",
+        "restaurant_agent_runtime.utils/aws_setting.py",
         monkeypatch,
         stubs={"boto3": _build_boto3_stub(fake_client)},
     )
@@ -138,7 +150,7 @@ def test_malformed_json_is_raised_as_runtime_error(monkeypatch):
     fake_client = _FakeSecretsClient({"sentinel": "value"})
     aws_setting = load_module(
         "aws_setting_malformed_json_under_test",
-        "restaurant_agent_core.utils/aws_setting.py",
+        "restaurant_agent_runtime.utils/aws_setting.py",
         monkeypatch,
         stubs={"boto3": _build_boto3_stub(fake_client)},
     )

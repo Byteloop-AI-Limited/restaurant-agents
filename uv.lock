@@ -5,7 +5,7 @@ requires-python = "==3.13.*"
 [manifest]
 members = [
     "bnat-agent",
-    "restaurant-agent-core",
+    "restaurant-agent-runtime",
     "sfcs-agent",
 ]
 
@@ -51,11 +51,11 @@ name = "bnat-agent"
 version = "0.1.0"
 source = { editable = "apps/bnat" }
 dependencies = [
-    { name = "restaurant-agent-core" },
+    { name = "restaurant-agent-runtime" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "restaurant-agent-core", editable = "packages/restaurant-agent-core" }]
+requires-dist = [{ name = "restaurant-agent-runtime", editable = "packages/restaurant-agent-runtime" }]
 
 [[package]]
 name = "boto3"
@@ -1263,9 +1263,9 @@ wheels = [
 ]
 
 [[package]]
-name = "restaurant-agent-core"
+name = "restaurant-agent-runtime"
 version = "0.1.0"
-source = { editable = "packages/restaurant-agent-core" }
+source = { editable = "packages/restaurant-agent-runtime" }
 dependencies = [
     { name = "annotated-types" },
     { name = "boto3" },
@@ -1392,11 +1392,11 @@ name = "sfcs-agent"
 version = "0.1.0"
 source = { editable = "apps/sfcs" }
 dependencies = [
-    { name = "restaurant-agent-core" },
+    { name = "restaurant-agent-runtime" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "restaurant-agent-core", editable = "packages/restaurant-agent-core" }]
+requires-dist = [{ name = "restaurant-agent-runtime", editable = "packages/restaurant-agent-runtime" }]
 
 [[package]]
 name = "six"

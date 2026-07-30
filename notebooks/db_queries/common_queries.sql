@@ -9,9 +9,12 @@ select * from customer_master;
 select rest_ref, count(*) from cust_rest_map where has_consent group by rest_ref;
 -- Check and close thread
 select * from thread where is_active order by dtts desc;
+
 update thread set is_active=False where is_active and recipient='447919202938';
--- 447919202938
--- 447872936799
+update thread set is_active=False where is_active and thread_id='BNAT-5561cc96-d2fd-4787-83e4-9a3394f79dd7';
+
+
+
 select * from cust_rest_map where cust_id='447448440754';
 select * from customer_master where cust_id='447919202938';
 select * from delivery_summary where order_number='ELAS-LIYF-22' order by dtts desc;

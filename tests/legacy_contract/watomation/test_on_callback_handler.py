@@ -91,7 +91,7 @@ def callback_module(monkeypatch):
     senders_module.select_service_wa_send = select_service_wa_send
     senders_module.send_something_else_options_wa = send_something_else_options_wa
 
-    datamodel_module = ModuleType("restaurant_agent_core.services.ordelo_service.datamodels.customer_master_pymodel")
+    datamodel_module = ModuleType("restaurant_agent_runtime.services.ordelo_service.datamodels.customer_master_pymodel")
 
     class UpdateCustRestMapRequest(BaseModel):
         cust_id: str
@@ -101,7 +101,7 @@ def callback_module(monkeypatch):
 
     datamodel_module.UpdateCustRestMapRequest = UpdateCustRestMapRequest
 
-    service_module = ModuleType("restaurant_agent_core.services.ordelo_service.ordelo_service")
+    service_module = ModuleType("restaurant_agent_runtime.services.ordelo_service.ordelo_service")
     service_module.update_calls = []
 
     class OrdeloService:
@@ -116,14 +116,14 @@ def callback_module(monkeypatch):
 
     module = load_module(
         "test_on_callback_handler_module",
-        "restaurant_agent_core.watomation/on_callback_handler.py",
+        "restaurant_agent_runtime.watomation/on_callback_handler.py",
         monkeypatch,
         {
             "config": config_stub,
             "sfcs_agent.rest_agent.agent_runner": runner_module,
             "sfcs_agent.rest_agent.agent_wa_senders": senders_module,
-            "restaurant_agent_core.services.ordelo_service.datamodels.customer_master_pymodel": datamodel_module,
-            "restaurant_agent_core.services.ordelo_service.ordelo_service": service_module,
+            "restaurant_agent_runtime.services.ordelo_service.datamodels.customer_master_pymodel": datamodel_module,
+            "restaurant_agent_runtime.services.ordelo_service.ordelo_service": service_module,
         },
     )
     module._runner_module = runner_module

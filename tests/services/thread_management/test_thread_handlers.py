@@ -16,7 +16,7 @@ Unit tests for in-memory thread handlers in services.thread_handlers
 
 import pytest
 
-from restaurant_agent_core.services import thread_handlers
+from restaurant_agent_runtime.services import thread_handlers
 
 
 @pytest.fixture(autouse=True)

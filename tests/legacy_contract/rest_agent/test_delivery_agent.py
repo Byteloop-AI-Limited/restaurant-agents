@@ -90,7 +90,7 @@ def delivery_module(monkeypatch):
     senders_module.confirm_delivery_address_wa = confirm_delivery_address_wa
     senders_module.send_update_address_wa = send_update_address_wa
 
-    payment_module = ModuleType("restaurant_agent_core.services.payment_ms.payment")
+    payment_module = ModuleType("restaurant_agent_runtime.services.payment_ms.payment")
     payment_module.cancel_calls = []
 
     async def cancel_payment(order_id, thread_id):
@@ -99,7 +99,7 @@ def delivery_module(monkeypatch):
 
     payment_module.cancel_payment = cancel_payment
 
-    order_service_module = ModuleType("restaurant_agent_core.services.order_service")
+    order_service_module = ModuleType("restaurant_agent_runtime.services.order_service")
     order_service_module.next_min_order_value = 15
 
     async def get_min_order_value(rest_ref, cust_lat, cust_lon):
@@ -115,10 +115,10 @@ def delivery_module(monkeypatch):
             "config": config_stub,
             "sfcs_agent.rest_agent.agents.agent_harness": harness_stub,
             "langchain.agents": langchain_agents_stub,
-            "restaurant_agent_core.services.lg_utils": lg_utils_stub,
+            "restaurant_agent_runtime.services.lg_utils": lg_utils_stub,
             "sfcs_agent.rest_agent.agent_wa_senders": senders_module,
-            "restaurant_agent_core.services.payment_ms.payment": payment_module,
-            "restaurant_agent_core.services.order_service": order_service_module,
+            "restaurant_agent_runtime.services.payment_ms.payment": payment_module,
+            "restaurant_agent_runtime.services.order_service": order_service_module,
         },
     )
     module.ButtonUrl = lambda **kwargs: SimpleNamespace(**kwargs)

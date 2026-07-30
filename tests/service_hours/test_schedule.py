@@ -3,8 +3,8 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from restaurant_agent_core.services.service_hours import WeeklySchedule
-from restaurant_agent_core.services.service_hours.types import Interval
+from restaurant_agent_runtime.services.service_hours import WeeklySchedule
+from restaurant_agent_runtime.services.service_hours.types import Interval
 
 UK = ZoneInfo("Europe/London")
 

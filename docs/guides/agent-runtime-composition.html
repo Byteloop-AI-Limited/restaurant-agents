@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Restaurant Agent Runtime Composition</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #07131f;
+      --panel: #0d2030;
+      --panel-2: #102a3d;
+      --text: #eaf2f7;
+      --muted: #9db2c1;
+      --line: #2d4b5e;
+      --app: #b8a8ff;
+      --shared: #69d7c1;
+      --external: #ffbd69;
+      --danger: #ff8b8b;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: radial-gradient(circle at 20% 0, #102b40 0, var(--bg) 42rem);
+      color: var(--text);
+      font: 16px/1.55 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    a { color: #8edcf2; }
+    code { color: #cfe7f0; }
+    .shell { width: min(1180px, calc(100% - 2rem)); margin: 0 auto; }
+    header { padding: 3.5rem 0 2rem; }
+    h1 { max-width: 820px; margin: 0; font-size: clamp(2rem, 5vw, 4rem); line-height: 1.05; }
+    h2 { margin: 0 0 1rem; font-size: 1.35rem; }
+    .lede { max-width: 760px; color: var(--muted); font-size: 1.08rem; }
+    .notice {
+      border-left: 4px solid var(--external);
+      padding: .8rem 1rem;
+      background: rgba(255, 189, 105, .09);
+      color: #f5dfbf;
+    }
+    nav { display: flex; flex-wrap: wrap; gap: .65rem 1rem; margin: 1.5rem 0; }
+    nav a { text-decoration: none; border-bottom: 1px solid var(--line); }
+    section { margin: 1.5rem 0; padding: 1.25rem; border: 1px solid var(--line); background: rgba(13, 32, 48, .88); border-radius: 14px; }
+    .legend { display: flex; gap: 1rem; flex-wrap: wrap; color: var(--muted); font-size: .9rem; }
+    .dot { display: inline-block; width: .7rem; height: .7rem; border-radius: 50%; margin-right: .35rem; }
+    .app-dot { background: var(--app); }
+    .shared-dot { background: var(--shared); }
+    .external-dot { background: var(--external); }
+    .flow { display: grid; grid-template-columns: repeat(6, minmax(145px, 1fr)); gap: .7rem; overflow-x: auto; padding-bottom: .4rem; }
+    .step { min-width: 145px; padding: 1rem; border: 1px solid var(--line); border-radius: 10px; position: relative; }
+    .step:not(:last-child)::after { content: "→"; position: absolute; right: -.65rem; top: 40%; z-index: 2; color: var(--muted); }
+    .app { border-top: 4px solid var(--app); }
+    .shared { border-top: 4px solid var(--shared); }
+    .step strong { display: block; margin-bottom: .45rem; }
+    .step small { color: var(--muted); }
+    .chains { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: .8rem; }
+    .chain { padding: 1rem; border: 1px solid var(--line); border-radius: 10px; }
+    .chain p { margin: .35rem 0 0; color: var(--muted); }
+    .chain .path { color: var(--text); font-weight: 650; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: .7rem; margin-bottom: 1rem; }
+    input, button {
+      padding: .65rem .8rem;
+      color: var(--text);
+      background: #081a28;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      font: inherit;
+    }
+    input { min-width: min(100%, 320px); flex: 1; }
+    button { cursor: pointer; }
+    button.active { border-color: var(--shared); color: var(--shared); }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(285px, 1fr)); gap: .8rem; }
+    .card { padding: 1rem; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); }
+    .card[data-owner="app"] { border-left: 4px solid var(--app); }
+    .card[data-owner="shared"] { border-left: 4px solid var(--shared); }
+    .card h3 { margin: 0 0 .3rem; font-size: 1rem; overflow-wrap: anywhere; }
+    .tag { font-size: .74rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+    .card dl { display: grid; grid-template-columns: 6.2rem 1fr; gap: .3rem .65rem; margin: .8rem 0; font-size: .9rem; }
+    .card dt { color: var(--muted); }
+    .card dd { margin: 0; }
+    .card[hidden] { display: none; }
+    .contexts { width: 100%; border-collapse: collapse; }
+    .contexts th, .contexts td { text-align: left; vertical-align: top; padding: .65rem; border-bottom: 1px solid var(--line); }
+    .contexts th { color: var(--muted); }
+    footer { color: var(--muted); padding: 1rem 0 3rem; }
+    @media (max-width: 760px) {
+      .flow { grid-template-columns: 1fr; }
+      .step:not(:last-child)::after { content: "↓"; right: 50%; top: auto; bottom: -.85rem; }
+      .contexts, .contexts tbody, .contexts tr, .contexts td { display: block; }
+      .contexts thead { display: none; }
+      .contexts td { border: 0; padding: .25rem .1rem; }
+      .contexts tr { padding: .7rem 0; border-bottom: 1px solid var(--line); }
+    }
+  </style>
+</head>
+<body>
+  <header class="shell">
+    <div class="tag">Architecture navigator</div>
+    <h1>How a restaurant app becomes a running agent</h1>
+    <p class="lede">A visual index of the records, functions, and adapters in the shared runtime. Read left to right for construction; use the cards to find where each Python construct is created and consumed.</p>
+    <p class="notice"><strong>Markdown is canonical.</strong> This page explains and links to the architecture; it does not define new rules. If it conflicts with the Constitution, ADRs, glossary, or domain model, those Markdown sources win.</p>
+    <nav aria-label="Canonical documentation">
+      <a href="../README.md">Documentation index</a>
+      <a href="../glossary.md">Glossary</a>
+      <a href="../domain/platform-domain-model.md">Domain model</a>
+      <a href="../adr/README.md">ADRs</a>
+      <a href="../multi_agent_system.md">Detailed agent guide</a>
+      <a href="../../CONSTITUTION.md">Constitution</a>
+    </nav>
+  </header>
+
+  <main class="shell">
+    <section>
+      <h2>Construction path</h2>
+      <div class="legend">
+        <span><span class="dot app-dot"></span>application-owned</span>
+        <span><span class="dot shared-dot"></span>shared-runtime-owned</span>
+        <span><span class="dot external-dot"></span>external authority</span>
+      </div>
+      <div class="flow" style="margin-top: 1rem">
+        <div class="step app"><strong>Identity + presentation</strong><small>Immutable values in the app's <code>identity.py</code>.</small></div>
+        <div class="step app"><strong>Prompt recipe</strong><small>Three complete prompts plus optional tools or node overrides.</small></div>
+        <div class="step app"><strong>App entrypoint</strong><small><code>main.py</code> supplies values and native callback bindings.</small></div>
+        <div class="step shared"><strong>create_restaurant_app</strong><small>Loads settings and builds exactly one application runtime.</small></div>
+        <div class="step shared"><strong>Graph factory</strong><small>A callable receives the runtime and returns a compatible adapter.</small></div>
+        <div class="step shared"><strong>Graph adapter</strong><small>Builds the standard graph and exposes run/debug operations.</small></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Source-of-truth chains</h2>
+      <div class="chains">
+        <div class="chain"><strong>Order</strong><div class="path">Database <code>FoodOrder</code></div><p><code>Thread</code> and <code>AgentState</code> coordinate a conversation; they do not replace the order aggregate.</p></div>
+        <div class="chain"><strong>Payment</strong><div class="path">Payment system → <code>FoodOrder.payment_status</code> → <code>AgentState</code></div><p>Runtime state is a working projection, never the authority for settled payment.</p></div>
+        <div class="chain"><strong>Fulfilment</strong><div class="path">Ordelo / rider / takeaway → <code>FoodOrder</code> → <code>AgentState</code></div><p>Delivery and takeaway are variants of one order aggregate.</p></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Composition constructs</h2>
+      <p class="lede">For a functional reader, most of these are immutable records, callable contracts, or closures around framework-native objects—not a deep object hierarchy.</p>
+      <div class="toolbar">
+        <input id="search" type="search" placeholder="Filter by construct or purpose…" aria-label="Filter constructs">
+        <button type="button" class="active" data-filter="all">All</button>
+        <button type="button" data-filter="app">App-owned</button>
+        <button type="button" data-filter="shared">Shared</button>
+      </div>
+      <div class="cards" id="cards">
+        <article class="card" data-owner="app"><div class="tag">app value</div><h3>RestaurantIdentity</h3><dl><dt>Think of it as</dt><dd>Validated immutable value</dd><dt>Created in</dt><dd>App <code>identity.py</code></dd><dt>Used by</dt><dd>Settings, routes, security</dd></dl><a href="../../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/runtime.py">Source contract</a></article>
+        <article class="card" data-owner="app"><div class="tag">app value</div><h3>RestaurantPresentation</h3><dl><dt>Think of it as</dt><dd>Immutable branding value</dd><dt>Created in</dt><dd>App <code>identity.py</code></dd><dt>Used by</dt><dd>Runtime and services</dd></dl><a href="../../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/runtime.py">Source contract</a></article>
+        <article class="card" data-owner="shared"><div class="tag">environment record</div><h3>RestaurantSettingsBundle</h3><dl><dt>Think of it as</dt><dd>Dependencies loaded from configuration</dd><dt>Created in</dt><dd>Settings loader</dd><dt>Used by</dt><dd>Runtime and services</dd></dl><a href="../../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/runtime.py">Source</a></article>
+        <article class="card" data-owner="shared"><div class="tag">environment record</div><h3>RestaurantRuntime</h3><dl><dt>Think of it as</dt><dd>Reader-style environment</dd><dt>Created in</dt><dd><code>create_restaurant_app</code></dd><dt>Used by</dt><dd>Handlers, tools, graph context</dd></dl><a href="../../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/runtime.py">Source</a></article>
+        <article class="card" data-owner="app"><div class="tag">app value</div><h3>RestaurantPrompts</h3><dl><dt>Think of it as</dt><dd>Immutable input record</dd><dt>Created in</dt><dd>App <code>agent_recipe.py</code></dd><dt>Used by</dt><dd>Standard graph adapter</dd></dl><a href="../../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/prompts.py">Source contract</a></article>
+        <article class="card" data-owner="app"><div class="tag">native callbacks</div><h3>AgentBindings</h3><dl><dt>Think of it as</dt><dd>Record of callable dependencies</dd><dt>Created in</dt><dd>App <code>main.py</code></dd><dt>Used by</dt><dd>WhatsApp registration</dd></dl><a href="../../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/web/app_factory.py">Source contract</a></article>
+        <article class="card" data-owner="shared"><div class="tag">protocol</div><h3>GraphAdapter</h3><dl><dt>Think of it as</dt><dd>Structural operations contract</dd><dt>Implemented by</dt><dd>Any compatible adapter</dd><dt>Used by</dt><dd>Shared webhooks and debug routes</dd></dl><a href="../../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/runtime.py">Source</a></article>
+        <article class="card" data-owner="app"><div class="tag">callable seam</div><h3>GraphAdapterFactory</h3><dl><dt>Think of it as</dt><dd><code>Runtime → Adapter</code></dd><dt>Created in</dt><dd>App recipe, usually with <code>partial</code></dd><dt>Used by</dt><dd>App factory</dd></dl><a href="../../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/runtime.py">Source contract</a></article>
+        <article class="card" data-owner="shared"><div class="tag">standard adapter</div><h3>RestaurantGraphAdapter</h3><dl><dt>Think of it as</dt><dd>Closure-like runtime-bound operations</dd><dt>Created by</dt><dd>Graph adapter factory</dd><dt>Used by</dt><dd>Handlers and routers</dd></dl><a href="../../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agent_runner.py">Source</a></article>
+        <article class="card" data-owner="shared"><div class="tag">composition root</div><h3>create_restaurant_app</h3><dl><dt>Think of it as</dt><dd>One assembly function</dd><dt>Called in</dt><dd>App entrypoint</dd><dt>Returns</dt><dd>Configured FastAPI application</dd></dl><a href="../../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/web/app_factory.py">Source</a></article>
+      </div>
+    </section>
+
+    <section>
+      <h2>Where a change belongs</h2>
+      <table class="contexts">
+        <thead><tr><th>Change</th><th>Owner</th><th>Use</th></tr></thead>
+        <tbody>
+          <tr><td>Wording, tone, restaurant policy</td><td>Application</td><td>Complete prompt file</td></tr>
+          <tr><td>Extra tool on triage, delivery, or takeaway</td><td>Application</td><td>Native tool through <code>extra_tools_by_agent</code></td></tr>
+          <tr><td>Complete replacement of a standard named agent</td><td>Application</td><td>Native runnable through <code>agent_overrides</code></td></tr>
+          <tr><td>Custom callback or HTTP endpoint</td><td>Application</td><td>Native PyWa callback or FastAPI router</td></tr>
+          <tr><td>New nodes or incompatible state, routing, handoffs, checkpointing, repair, or debug behavior</td><td>Application</td><td>App-owned <code>GraphAdapter</code></td></tr>
+          <tr><td>Behavior with compatible semantics needed by a second app</td><td>Shared runtime after review</td><td>Promote once; do not copy</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+
+  <footer class="shell">Generated as a navigation aid for the repository's canonical Markdown documentation.</footer>
+  <script>
+    const cards = [...document.querySelectorAll('.card')];
+    const search = document.querySelector('#search');
+    const buttons = [...document.querySelectorAll('[data-filter]')];
+    let owner = 'all';
+    function applyFilters() {
+      const query = search.value.trim().toLowerCase();
+      cards.forEach(card => {
+        const ownerMatches = owner === 'all' || card.dataset.owner === owner;
+        const textMatches = !query || card.textContent.toLowerCase().includes(query);
+        card.hidden = !(ownerMatches && textMatches);
+      });
+    }
+    search.addEventListener('input', applyFilters);
+    buttons.forEach(button => button.addEventListener('click', () => {
+      owner = button.dataset.filter;
+      buttons.forEach(item => item.classList.toggle('active', item === button));
+      applyFilters();
+    }));
+  </script>
+</body>
+</html>

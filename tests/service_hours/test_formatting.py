@@ -1,6 +1,6 @@
 import pytest
 
-from restaurant_agent_core.services.service_hours.formatting import format_minutes
+from restaurant_agent_runtime.services.service_hours.formatting import format_minutes
 
 
 def test_midnight():

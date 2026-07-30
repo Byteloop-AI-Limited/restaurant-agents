@@ -67,8 +67,8 @@ def test_triage_tool_surface_matches_single_restaurant_flow():
 
 def test_sender_and_callbacks_no_longer_define_select_rest_ref_flow():
     sender_source = _read("sfcs_agent.rest_agent/agent_wa_senders.py")
-    callback_source = _read("restaurant_agent_core.watomation/on_callback_handler.py")
-    callback_tree = _parse("restaurant_agent_core.watomation/on_callback_handler.py")
+    callback_source = _read("restaurant_agent_runtime.watomation/on_callback_handler.py")
+    callback_tree = _parse("restaurant_agent_runtime.watomation/on_callback_handler.py")
 
     assert "select_rest_ref_wa_send" not in sender_source
     assert "normalized_rest_ref = str(rest_ref).lower()" in sender_source
@@ -80,7 +80,7 @@ def test_sender_and_callbacks_no_longer_define_select_rest_ref_flow():
 
 
 def test_callback_registration_only_keeps_select_service_flow():
-    source = _read("restaurant_agent_core.watomation/fapp.py")
+    source = _read("restaurant_agent_runtime.watomation/fapp.py")
 
     assert "/SelectService" in source
     assert "/SelectRestRef" not in source

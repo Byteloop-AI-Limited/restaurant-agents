@@ -1,6 +1,6 @@
 """SFCS-owned identity and presentation settings."""
 
-from restaurant_agent_core import RestaurantIdentity, RestaurantPresentation
+from restaurant_agent_runtime import RestaurantIdentity, RestaurantPresentation
 
 IDENTITY = RestaurantIdentity(rest_ref="SFCS", waba_namespace="sfcs")
 PRESENTATION = RestaurantPresentation(

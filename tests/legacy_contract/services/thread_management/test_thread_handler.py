@@ -23,7 +23,7 @@ from tests._stubs.pool_stub import FakeAsyncPool
 def thread_handler_module(monkeypatch):
     return load_module(
         "test_thread_handler_module",
-        "restaurant_agent_core.services/thread_management/thread_handler.py",
+        "restaurant_agent_runtime.services/thread_management/thread_handler.py",
         monkeypatch,
     )
 

@@ -11,7 +11,7 @@ Unit tests for restaurant menu query parameter model
 import pytest
 from pydantic import ValidationError
 
-from restaurant_agent_core.services.wa_templates.rest_menu_query_params import RestMenuQueryParams
+from restaurant_agent_runtime.services.wa_templates.rest_menu_query_params import RestMenuQueryParams
 
 
 def test_to_query_params_excludes_rest_ref_and_none_distance():

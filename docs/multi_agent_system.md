@@ -1,72 +1,348 @@
----
-# Feature: Multi-Agent Orchestration System
-The multi-agent orchestration system coordinates conversations across specialized agents (Triage, Delivery, Takeaway) using a LangGraph StateGraph with conditional routing. It exists to classify customer intent and seamlessly hand off conversations between agents while preserving shared state. The triage agent greets customers, answers inquiries/general questions, routes to the appropriate ordering agent, and handles unsupported dine-in/reservation requests directly; transfer tools update `active_agent` in shared state and the router graph directs execution to the correct agent node on each turn.
+# Feature: Shared Multi-Agent Orchestration System
+
+The shared Restaurant Agent runtime coordinates triage, delivery, and takeaway
+conversations through one fixed LangGraph topology. The runtime owns the graph,
+standard agents, ordered tools, state, middleware, checkpointing, repair, and
+debug behavior. Each restaurant application owns its identity, presentation,
+three complete prompts, small `agent_recipe.py` composition module, entrypoint,
+and any genuinely custom behavior.
+
+For an interactive view of the same architecture, open
+[the Agent runtime composition guide](./guides/agent-runtime-composition.html).
+The governing design decisions are recorded in
+[the shared-runtime decision record](./architecture/shared-agent-runtime-decisions.md).
+Platform-wide terms and authority rules are defined in the
+[glossary](./glossary.md) and [domain model](./domain/platform-domain-model.md).
 
 ---
 
 ## Human-Friendly Code Map
-- [Multi-agent graph builder](./rest_agent/agents/multi_agent.py)
-- [Shared state schemas and transfer tools](./rest_agent/agents/agent_harness.py)
-- [Triage agent definition](./rest_agent/agents/triage.py)
-- [Triage agent system prompt](./rest_agent/agents/prompts/triage_agent_prompt.md)
-- [Graph runner (entry point)](./rest_agent/agent_runner.py)
-- [Callback handler (service selection)](./watomation/on_callback_handler.py)
-- [WhatsApp sending helpers](./rest_agent/agent_wa_senders.py)
 
-### Detailed Flow Explanation
-1. A WhatsApp message arrives and is routed to `run_elai_graph_with_custom_msg` in `agent_runner.py`, which compiles the multi-agent graph from `multi_agent.builder` with a PostgreSQL checkpointer and builds a `ContextSchema` carrying runtime resources (DB pool, WhatsApp client, recipient, Ordelo client).
-2. On the first turn of a new thread, the runner seeds `wa_name` and a system message instructing the agent to call `send_welcome_msg`. The graph enters via `START` and `route_initial` reads `active_agent` from state, defaulting to `"triage_agent"` when no agent has been selected.
-3. The triage agent node (`call_triage_agent`) invokes the triage LangChain agent, which is configured with tools for welcome, service selection, marketing consent, termination, and delivery/takeaway transfers. Middleware hooks (`cleanup_before_model`, `respond_on_wa`) handle skipping redundant LLM calls when `/DoNotRespond:` markers are present and sending WhatsApp replies.
-4. The triage agent greets the customer via `send_welcome_message`, then sends service selection buttons (Collection / Delivery / Inquiry) and ends the turn with a `/DoNotRespond:` marker.
-5. When the customer taps a service button, `select_service_handler` in `on_callback_handler.py` parses callback data and updates shared state via `run_elai_graph_with_custom_msg` with `state_update_dict` containing the new `active_agent` value (`"delivery_agent"`, `"takeaway_agent"`, or `"triage_agent"` for Inquiry). If `active_agent` is missing but `rest_ref` is present, the handler sends service selection buttons.
-6. If the customer's intent is clear from text (e.g., delivery or takeaway), the triage agent calls the matching transfer tool directly. Dine-in/table/reservation requests stay in triage and are answered as unsupported for this WhatsApp flow. Transfer tools in `agent_harness.py` run the delivery retain guard, which blocks transfer away from delivery while `retain_thread=True`.
-7. After any agent node completes, `route_after_agent` inspects the last message: if it is an `AIMessage` without tool calls, the graph ends (`__end__`); otherwise it reads `active_agent` from state and routes to the corresponding agent node, enabling seamless multi-turn handoffs.
-8. The delivery and takeaway agent nodes (`call_delivery_agent`, `call_takeaway_agent`) are wrappers that invoke their compiled agents.
-9. State persists across turns via `AsyncPostgresSaver`. The `AgentState` TypedDict includes `active_agent` for routing, `messages` with an `add_messages` reducer for conversation history, and all order/delivery/payment flags shared across agents. `ContextSchema` (Pydantic BaseModel) carries the PostgreSQL pool, WhatsApp client, recipient, Ordelo client, and a lazily-initialized `ThreadHandler`.
+- [Runtime interfaces and GraphAdapter protocol](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/runtime.py)
+- [FastAPI, runtime, and WhatsApp-client assembly](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/web/app_factory.py)
+- [Standard graph adapter and runner](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agent_runner.py)
+- [Fixed three-node graph](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agents/multi_agent.py)
+- [Shared state, context, handoffs, and middleware](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agents/agent_harness.py)
+- [Standard triage agent and tools](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agents/triage.py)
+- [Standard delivery agent and tools](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agents/delivery.py)
+- [Standard takeaway agent and tools](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agents/takeaway.py)
+- [SFCS prompt recipe](../apps/sfcs/src/sfcs_agent/rest_agent/agent_recipe.py)
+- [BNAT prompt recipe](../apps/bnat/src/bnat_agent/rest_agent/agent_recipe.py)
 
-### Code References
+## Composition Vocabulary for Functional Programmers
 
-#### Graph Construction & Routing — Builds the state machine and decides which agent runs next
-- `build_multi_agent_graph` in [`rest_agent/agents/multi_agent.py`](./rest_agent/agents/multi_agent.py) — Constructs the StateGraph with triage, delivery, and takeaway agent nodes plus conditional routing edges based on `active_agent` state.
-- `route_initial` in [`rest_agent/agents/multi_agent.py`](./rest_agent/agents/multi_agent.py) — Routes the initial graph entry to the active agent, defaulting to `triage_agent` when no agent has been selected yet.
-- `route_after_agent` in [`rest_agent/agents/multi_agent.py`](./rest_agent/agents/multi_agent.py) — Ends the graph when the last message is an AIMessage without tool calls, or routes to the next active agent for continued processing.
+Most classes in the composition path are immutable records, callable contracts,
+or thin framework adapters rather than an inheritance hierarchy.
 
-#### Agent Node Wrappers — Invoke each specialized agent within the graph
-- `call_triage_agent` in [`rest_agent/agents/multi_agent.py`](./rest_agent/agents/multi_agent.py) — Invokes the triage agent and returns its Command response for graph routing.
-- `call_delivery_agent` in [`rest_agent/agents/multi_agent.py`](./rest_agent/agents/multi_agent.py) — Invokes the compiled delivery sub-graph and returns its response.
-- `call_takeaway_agent` in [`rest_agent/agents/multi_agent.py`](./rest_agent/agents/multi_agent.py) — Invokes the takeaway agent sub-graph and returns its response.
+| Python construct | Functional interpretation | Constructed at | Consumed by |
+| --- | --- | --- | --- |
+| `RestaurantIdentity` | Validated immutable value | App `identity.py` | App factory, routes, settings loader |
+| `RestaurantPresentation` | Immutable configuration value | App `identity.py` | App factory, runtime, customer-facing services |
+| `RestaurantSettingsBundle` | Environment/dependency record | Settings loader | `RestaurantRuntime` and shared services |
+| `RestaurantRuntime` | Reader-style environment | `create_restaurant_app()` | Handlers, routers, adapter, graph context |
+| `RestaurantPrompts` | Immutable input record | App `agent_recipe.py` | `RestaurantGraphAdapter` |
+| `AgentBindings` | Record of functions and framework types | App `main.py` | WhatsApp handler registration |
+| `GraphAdapter` | Structural operations contract | Implemented by compatible objects | Shared web and webhook code |
+| `GraphAdapterFactory` | Function type `Runtime -> Adapter` | App recipe | `create_restaurant_app()` |
+| `RestaurantGraphAdapter` | Closure-like object with named async operations | Graph factory invocation | Shared handlers and routers |
+| `create_restaurant_app` | Composition-root function | App entrypoint | Returns one configured FastAPI app |
 
-#### Shared State & Runtime Resources — Define the data all agents read and write
-- `AgentState` in [`rest_agent/agents/agent_harness.py`](./rest_agent/agents/agent_harness.py) — Shared TypedDict containing `active_agent` for routing, `messages` with `add_messages` reducer, and all order/delivery/payment flags.
-- `ContextSchema` in [`rest_agent/agents/agent_harness.py`](./rest_agent/agents/agent_harness.py) — Pydantic BaseModel carrying runtime resources (PostgreSQL pool, WhatsApp client, recipient, Ordelo client, ThreadHandler) shared across all graph nodes and tools.
+`frozen=True` prevents rebinding record fields but does not make referenced
+clients pure. `functools.partial(RestaurantGraphAdapter, prompts=PROMPTS)` binds
+the app-owned prompt argument and leaves a callable waiting for
+`RestaurantRuntime`.
 
-#### Agent Handoff Tools — Transfer control between agents mid-conversation
-- `transfer_to_delivery` in [`rest_agent/agents/agent_harness.py`](./rest_agent/agents/agent_harness.py) — Sets `active_agent` to `delivery_agent` and returns a parent-graph handoff command with a ToolMessage.
-- `transfer_to_takeaway` in [`rest_agent/agents/agent_harness.py`](./rest_agent/agents/agent_harness.py) — Sets `active_agent` to `takeaway_agent` and returns a parent-graph handoff command with a ToolMessage.
-- `terminate_conversation` in [`rest_agent/agents/agent_harness.py`](./rest_agent/agents/agent_harness.py) — Marks threads inactive, sends a goodbye message via WhatsApp, and ends the graph.
+Read the construction path in this order:
 
-#### Middleware — Controls when the LLM runs and how responses reach WhatsApp
-- `cleanup_before_model` in [`rest_agent/agents/agent_harness.py`](./rest_agent/agents/agent_harness.py) — Pre-model hook that detects `/DoNotRespond:` markers in the last message and skips the LLM call by jumping to end.
-- `respond_on_wa` in [`rest_agent/agents/agent_harness.py`](./rest_agent/agents/agent_harness.py) — Post-agent hook that sends AI responses via WhatsApp and cleans up `/DoNotRespond:` markers from message history.
+```text
+app identity.py + app agent_recipe.py
+    -> app main.py
+    -> create_restaurant_app()
+    -> RestaurantRuntime
+    -> GraphAdapterFactory(runtime)
+    -> RestaurantGraphAdapter
+    -> build_multi_agent_graph()
+```
 
-#### Triage Agent — Greets the customer and routes them to the right ordering agent
-- `agent` in [`rest_agent/agents/triage.py`](./rest_agent/agents/triage.py) — LangChain agent configured with triage tools (welcome, service selection, marketing consent, termination, and delivery/takeaway transfer) and middleware hooks for WhatsApp response handling.
-- `send_welcome_message` in [`rest_agent/agents/triage.py`](./rest_agent/agents/triage.py) — Sends a personalized welcome message to the customer at conversation start via WhatsApp.
-- `ask_user_to_select_service` in [`rest_agent/agents/triage.py`](./rest_agent/agents/triage.py) — Sends interactive WhatsApp buttons (Collection / Delivery / Inquiry) and ends the turn with a DoNotRespond marker.
+## Ownership Model
 
-#### Graph Execution — Compiles and runs the multi-agent graph for each incoming message
-- `run_elai_graph_with_custom_msg` in [`rest_agent/agent_runner.py`](./rest_agent/agent_runner.py) — Compiles the graph with a PostgreSQL checkpointer, injects messages and state updates, and executes the graph returning the AI response.
+| Concern | Owner | Extension point |
+| --- | --- | --- |
+| Identity, presentation, WABA namespace | Application | `identity.py` |
+| Complete triage, delivery, and takeaway prompts | Application | `rest_agent/prompts/*.md` |
+| Prompt and adapter composition | Application | `rest_agent/agent_recipe.py` |
+| Standard graph, state, routing, middleware, and tools | Shared runtime | No app-local copy |
+| Additional tool on an existing standard node | Application | `extra_tools_by_agent` |
+| Complete replacement for one standard node | Application | `agent_overrides` |
+| Custom callback or API route | Application | Native PyWa handler or FastAPI router |
+| New node, incompatible state, routing, checkpointing, repair, or debug behavior | Application | App-owned `GraphAdapter` |
 
-#### WhatsApp Callback Handling — Processes button taps and sends interactive messages
-- `select_service_handler` in [`watomation/on_callback_handler.py`](./watomation/on_callback_handler.py) — Handles `/SelectService` callback buttons for service selection, parsing `rest_ref` and `active_agent` from callback data and routing back into the graph. If `active_agent` is missing but `rest_ref` is present, it sends service selection buttons.
-- `select_service_wa_send` in [`rest_agent/agent_wa_senders.py`](./rest_agent/agent_wa_senders.py) — Sends WhatsApp buttons for Collection / Delivery / Inquiry with `rest_ref` and `active_agent` encoded in `/SelectService` callback data.
+The runtime never imports an application package, and one application must never
+import another. Application values flow into the shared runtime through the
+existing `GraphAdapterFactory` callable.
 
-### Edge Cases
-- No `active_agent` in state -> `route_initial` defaults to `"triage_agent"`, ensuring new conversations always start with triage.
-- Agent returns AIMessage without tool calls -> `route_after_agent` routes to `__end__`, preventing infinite loops when the agent has finished responding.
-- Transfer tool called but target agent sub-graph fails -> the error propagates through `run_elai_graph_with_custom_msg`; OpenAI BadRequestError from tool-call mismatch triggers `_repair_last_ai_tool_call_message` or session termination.
-- Inquiry button selected -> `select_service_handler` invokes triage with `HumanMessage("Inquiry")`, and triage asks one concise direct question to understand the inquiry.
-- Stale thread with no recent activity -> the PostgreSQL job excludes latest-checkpoint `retain_thread=True` rows and sends eligible thread IDs and recipients directly to thread hooks, whose bounded background worker invokes `terminate_conversation` without a preflight database recheck.
-- Transfer requested while `retain_thread=True` (delivery in progress) -> `_transfer_check_delivery_retain` blocks handoff and keeps the user in the current delivery flow.
-- Circular handoffs (e.g., triage -> delivery -> triage) -> prevented by `route_after_agent` ending the graph when no tool calls are pending; state-based routing ensures only one agent is active per turn.
-- Incomplete callback data (missing `active_agent` after service selection) -> `select_service_handler` logs an error and returns without advancing the graph.
+## Detailed Flow Explanation
+
+1. An app entrypoint supplies its `RestaurantIdentity`,
+   `RestaurantPresentation`, `GRAPH_ADAPTER_FACTORY`, and `AgentBindings` to
+   `create_restaurant_app()`.
+2. The web factory loads only the selected WABA namespace, creates one async and
+   one sync WhatsApp client, and constructs one `RestaurantRuntime`.
+3. The app's `agent_recipe.py` has already loaded three complete prompt files
+   into an immutable `RestaurantPrompts` value and bound them to
+   `RestaurantGraphAdapter` with `functools.partial`.
+4. The web factory calls that bound graph factory with the exact runtime, then
+   stores both runtime and adapter on `app.state`.
+5. `RestaurantGraphAdapter.__init__` reads the model from
+   `runtime.settings.llm`, constructs the standard or overridden triage,
+   delivery, and takeaway runnables, and builds the `StateGraph` once.
+6. `build_multi_agent_graph()` registers exactly three nodes:
+   `triage_agent`, `delivery_agent`, and `takeaway_agent`. `route_initial`
+   defaults to triage; `route_after_agent` ends on a final AI message or follows
+   `active_agent` to another standard node.
+7. For each operation, `run_rest_graph_with_custom_msg()` compiles that builder
+   with an `AsyncPostgresSaver`, resolves the restaurant-prefixed thread, repairs
+   malformed persisted tool-call tails, and creates `ContextSchema`.
+8. `ContextSchema` receives the same async WhatsApp client held by the
+   `RestaurantRuntime`, plus the database pool, recipient, restaurant identity,
+   presentation, project settings, and Ordelo client. Tools therefore use the
+   exact application runtime rather than module-global clients.
+9. Standard transfer tools update `active_agent` with parent-graph
+   `Command` objects. `cleanup_before_model` and `respond_on_wa` coordinate
+   `/DoNotRespond:` turns and outbound WhatsApp responses.
+10. State persists across turns through the PostgreSQL checkpointer. Debug and
+    state-inspection methods reuse the same adapter boundary.
+
+## Standard Nodes and Ordered Tools
+
+### `triage_agent`
+
+1. `send_welcome_message`
+2. `ask_user_to_select_service`
+3. `capture_marketing_consent`
+4. `terminate_conversation`
+5. `transfer_to_delivery`
+6. `transfer_to_takeaway`
+
+### `delivery_agent`
+
+1. `send_welcome_msg`
+2. `answer_general_query`
+3. `confirm_delivery_address`
+4. `capture_delivery_address`
+5. `update_address_of_existing_user`
+6. `calculate_min_order_value`
+7. `send_restaurant_menu_tool`
+8. `verify_if_payment_complete`
+9. `send_updates_to_customer`
+10. `check_delivery_driver_allocation_status`
+11. `send_rider_live_location_link`
+12. `transfer_to_takeaway`
+13. `transfer_to_triage`
+
+### `takeaway_agent`
+
+1. `verify_if_payment_complete`
+2. `send_takeaway_menu_tool`
+3. `transfer_to_delivery`
+4. `transfer_to_triage`
+
+Shared-runtime contract tests own these node names, routes, and ordered tool
+lists. App tests own prompt presence and exact runtime/client composition.
+
+## Customization Contract
+
+### Change only wording or policy
+
+Edit the owning app's complete prompt file. Prompts are not assembled from
+shared fragments. Because `agent_recipe.py` reads them during module import, the
+application process must restart to load changes.
+
+### Add a tool to an existing node
+
+Keep the native LangChain tool in the app package and bind it in
+`agent_recipe.py`:
+
+```python
+GRAPH_ADAPTER_FACTORY = partial(
+    RestaurantGraphAdapter,
+    prompts=PROMPTS,
+    extra_tools_by_agent={"triage_agent": [check_loyalty]},
+)
+```
+
+Only the three standard node names are valid. Extra tools are appended after the
+standard ordered tools.
+
+### Replace one complete standard agent
+
+Supply a native runnable through `agent_overrides`:
+
+```python
+GRAPH_ADAPTER_FACTORY = partial(
+    RestaurantGraphAdapter,
+    prompts=PROMPTS,
+    agent_overrides={"delivery_agent": CUSTOM_DELIVERY_AGENT},
+)
+```
+
+The replacement must define `ainvoke` and preserve the standard node name,
+`AgentState`, `ContextSchema`, and handoff behavior. A node cannot receive extra
+tools and be replaced at the same time.
+
+### Change graph or state semantics
+
+An app owns a complete `GraphAdapter` when it adds or removes nodes, changes
+routing or handoff names, changes shared state incompatibly, or changes
+checkpointing, compilation, repair, or debug behavior. Do not mutate private
+shared-runtime graph internals or introduce a node registry.
+
+### Add callbacks or routes
+
+Use framework-native extension points during app assembly: register PyWa
+handlers on `app.state.restaurant_runtime.async_wa_client` and include FastAPI
+routers with `app.include_router()`. If handler ordering makes post-registration
+incorrect, the application owns its application factory.
+
+## New Restaurant Composition Checklist
+
+1. Create `apps/<slug>` as an independent workspace application.
+2. Add app-owned `RestaurantIdentity` and `RestaurantPresentation` values.
+3. Provide a complete, strict WABA namespace; no other namespace is a fallback.
+4. Add all three complete prompt files under the app's `rest_agent/prompts/`.
+5. Add `agent_recipe.py` that exposes a `GraphAdapterFactory`-compatible callable.
+6. Pass identity, presentation, graph factory, and bindings to
+   `create_restaurant_app()`.
+7. Add an app composition test that proves exact runtime and async
+   WhatsApp-client binding plus all three app-owned prompts.
+8. Use extra tools or a named-agent override for compatible variation; use an
+   app-owned adapter only for an incompatible graph contract.
+
+## Code References (Machine-Readable)
+
+```code-ref
+file: packages/restaurant-agent-runtime/src/restaurant_agent_runtime/runtime.py
+symbol: RestaurantIdentity
+feature: shared-multi-agent-orchestration
+description: >
+  Immutable app-owned routing identity containing rest_ref and WABA namespace.
+```
+
+```code-ref
+file: packages/restaurant-agent-runtime/src/restaurant_agent_runtime/runtime.py
+symbol: RestaurantPresentation
+feature: shared-multi-agent-orchestration
+description: >
+  Immutable app-owned customer-facing branding supplied to the shared runtime.
+```
+
+```code-ref
+file: packages/restaurant-agent-runtime/src/restaurant_agent_runtime/runtime.py
+symbol: RestaurantSettingsBundle
+feature: shared-multi-agent-orchestration
+description: >
+  Groups the selected settings and external clients required by one application runtime.
+```
+
+```code-ref
+file: packages/restaurant-agent-runtime/src/restaurant_agent_runtime/runtime.py
+symbol: RestaurantRuntime
+feature: shared-multi-agent-orchestration
+description: >
+  Carries one application's identity, presentation, settings, and exact WhatsApp clients.
+```
+
+```code-ref
+file: packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/prompts.py
+symbol: RestaurantPrompts
+feature: shared-multi-agent-orchestration
+description: >
+  Immutable record of complete app-owned triage, delivery, and takeaway prompts.
+```
+
+```code-ref
+file: packages/restaurant-agent-runtime/src/restaurant_agent_runtime/web/app_factory.py
+symbol: AgentBindings
+feature: shared-multi-agent-orchestration
+description: >
+  Supplies the native callback-data type and service-selection sender used during handler registration.
+```
+
+```code-ref
+file: packages/restaurant-agent-runtime/src/restaurant_agent_runtime/runtime.py
+symbol: GraphAdapterFactory
+feature: shared-multi-agent-orchestration
+description: >
+  Defines the application-owned callable boundary that receives one RestaurantRuntime and returns a GraphAdapter.
+```
+
+```code-ref
+file: packages/restaurant-agent-runtime/src/restaurant_agent_runtime/web/app_factory.py
+symbol: create_restaurant_app
+feature: shared-multi-agent-orchestration
+description: >
+  Builds one isolated FastAPI application, runtime, WhatsApp-client pair, graph adapter, handler set, and router set.
+```
+
+```code-ref
+file: packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agent_runner.py
+symbol: RestaurantGraphAdapter
+feature: shared-multi-agent-orchestration
+description: >
+  Binds app-owned prompts and optional standard-node customizations to the exact RestaurantRuntime.
+```
+
+```code-ref
+file: packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agent_runner.py
+symbol: run_rest_graph_with_custom_msg
+feature: shared-multi-agent-orchestration
+description: >
+  Compiles and runs the graph with PostgreSQL checkpointing and an execution context carrying the exact application runtime.
+```
+
+```code-ref
+file: packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agents/multi_agent.py
+symbol: build_multi_agent_graph
+feature: shared-multi-agent-orchestration
+description: >
+  Constructs the fixed triage, delivery, and takeaway StateGraph and its conditional routing edges.
+```
+
+```code-ref
+file: packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agents/agent_harness.py
+symbol: ContextSchema
+feature: shared-multi-agent-orchestration
+description: >
+  Carries the exact runtime WhatsApp client, database resources, recipient, identity, and presentation into agents and tools.
+```
+
+```code-ref
+file: apps/sfcs/src/sfcs_agent/rest_agent/agent_recipe.py
+symbol: GRAPH_ADAPTER_FACTORY
+feature: shared-multi-agent-orchestration
+description: >
+  Loads SFCS-owned complete prompts and binds them to the standard RestaurantGraphAdapter.
+```
+
+```code-ref
+file: apps/bnat/src/bnat_agent/rest_agent/agent_recipe.py
+symbol: GRAPH_ADAPTER_FACTORY
+feature: shared-multi-agent-orchestration
+description: >
+  Loads BNAT-owned complete prompts and binds them to the standard RestaurantGraphAdapter.
+```
+
+## Edge Cases
+
+- Empty prompt values fail application construction with `ValueError`.
+- Unknown keys in `extra_tools_by_agent` or `agent_overrides` fail construction.
+- A node present in both customization mappings fails construction.
+- An agent override without callable `ainvoke` fails construction.
+- Missing namespaced WABA values fail startup; there is no cross-app fallback.
+- Invalid or missing `active_agent` values route to `triage_agent`.
+- A final `AIMessage` without tool calls routes to `END`.
+- Transfer guards can block a handoff while retained delivery work is active.
+- A malformed persisted assistant/tool tail is trimmed and retried once; an
+  unrecoverable mismatch terminates the session.
+- Cross-restaurant routes return `404` before graph calls or external side
+  effects.

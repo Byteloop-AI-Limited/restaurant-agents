@@ -32,7 +32,7 @@ from tests._stubs.loader import load_module
 def order_service_module(monkeypatch):
     return load_module(
         "test_order_service_module",
-        "restaurant_agent_core.services/order_service.py",
+        "restaurant_agent_runtime.services/order_service.py",
         monkeypatch,
     )
 

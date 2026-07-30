@@ -17,19 +17,19 @@ from tests._stubs.config_stub import build_config_stub
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 _SOURCE_PREFIXES = {
-    "restaurant_agent_core.config/": "packages/restaurant-agent-core/src/restaurant_agent_core/config/",
-    "restaurant_agent_core.services/": "packages/restaurant-agent-core/src/restaurant_agent_core/services/",
-    "restaurant_agent_core.utils/": "packages/restaurant-agent-core/src/restaurant_agent_core/utils/",
-    "restaurant_agent_core.watomation/": "packages/restaurant-agent-core/src/restaurant_agent_core/watomation/",
-    "sfcs_agent.rest_agent/": "apps/sfcs/src/sfcs_agent/rest_agent/",
+    "restaurant_agent_runtime.config/": "packages/restaurant-agent-runtime/src/restaurant_agent_runtime/config/",
+    "restaurant_agent_runtime.rest_agent/": "packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/",
+    "restaurant_agent_runtime.services/": "packages/restaurant-agent-runtime/src/restaurant_agent_runtime/services/",
+    "restaurant_agent_runtime.utils/": "packages/restaurant-agent-runtime/src/restaurant_agent_runtime/utils/",
+    "restaurant_agent_runtime.watomation/": "packages/restaurant-agent-runtime/src/restaurant_agent_runtime/watomation/",
 }
 
 _MODULE_PREFIXES = {
-    "config": "restaurant_agent_core.config",
-    "services": "restaurant_agent_core.services",
-    "utils": "restaurant_agent_core.utils",
-    "watomation": "restaurant_agent_core.watomation",
-    "rest_agent": "sfcs_agent.rest_agent",
+    "config": "restaurant_agent_runtime.config",
+    "services": "restaurant_agent_runtime.services",
+    "utils": "restaurant_agent_runtime.utils",
+    "watomation": "restaurant_agent_runtime.watomation",
+    "rest_agent": "restaurant_agent_runtime.rest_agent",
 }
 
 
@@ -55,7 +55,7 @@ def _build_dedup_stub():
     Many ported tests use lightweight fakes without `.id`; this stub bypasses
     deduplication during unit tests.
     """
-    module = ModuleType("restaurant_agent_core.watomation.dedup")
+    module = ModuleType("restaurant_agent_runtime.watomation.dedup")
 
     def wa_dedup(fn):
         return fn
@@ -67,8 +67,8 @@ def _build_dedup_stub():
 
 def load_module(module_name: str, relative_path: str, monkeypatch, stubs=None):
     module_stubs = {
-        "restaurant_agent_core.config": build_config_stub(),
-        "restaurant_agent_core.watomation.dedup": _build_dedup_stub(),
+        "restaurant_agent_runtime.config": build_config_stub(),
+        "restaurant_agent_runtime.watomation.dedup": _build_dedup_stub(),
         **(stubs or {}),
     }
     for name, module in module_stubs.items():

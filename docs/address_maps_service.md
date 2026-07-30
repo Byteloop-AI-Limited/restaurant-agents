@@ -6,7 +6,7 @@ The address and maps service resolves customer delivery addresses using the Goog
 
 ## Human-Friendly Code Map
 - [AddressResolver and UKAddress model](./services/maps_service/address_resolver.py)
-- [WhatsApp address senders (confirm, postcode flow, update)](./rest_agent/agent_wa_senders.py)
+- [WhatsApp address senders (confirm, postcode flow, update)](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agent_wa_senders.py)
 - [Callback handler for address confirmation](./watomation/on_callback_handler.py)
 - [Postcode search flow handler (archived reference)](./utils_common/archive/on_flow_request_postcode_search.py)
 - [Postcode search WhatsApp Flow definition](./utils_common/wa_flows/flow_postcode_search.py)
@@ -29,7 +29,7 @@ The address and maps service resolves customer delivery addresses using the Goog
 2. The flow is a two-screen interactive form defined in `flow_postcode_search.py`: the START screen accepts a postcode or street name search query, and the ADDRESS screen displays resolved address fields (house number, building, street, city, postcode) for user confirmation.
 3. On the START screen submission, `on_ip_pc` calls `address_resolver.get_address_from_postcode` to resolve the input and populates the ADDRESS screen with the result, including lat/lon for downstream use.
 4. When the user confirms the ADDRESS form, `on_pc_search_complete` fires. It constructs a `CustomerMaster` record and upserts it into the Supabase `customer_master` table.
-5. The handler then updates the LangGraph state via `run_elai_graph_with_custom_msg` with `customer_address`, resets `min_order_value` to None (forcing recalculation), and sets `is_delivery_address_confirmed` to True.
+5. The handler then updates the LangGraph state via `run_rest_graph_with_custom_msg` with `customer_address`, resets `min_order_value` to None (forcing recalculation), and sets `is_delivery_address_confirmed` to True.
 
 **Address Confirmation via Callback Buttons**
 
@@ -87,25 +87,25 @@ feature: Address and Maps Service
 description: >
   Module-level singleton instance of AddressResolver initialized with the Google Maps API key from config.
 
-file: rest_agent/agent_wa_senders.py
+file: packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agent_wa_senders.py
 symbol: confirm_delivery_address_wa
 feature: Address and Maps Service
 description: >
   Sends a WhatsApp interactive message with the customer's stored address and Yes/Update confirmation buttons via callback data.
 
-file: rest_agent/agent_wa_senders.py
+file: packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agent_wa_senders.py
 symbol: send_postcode_search_flow
 feature: Address and Maps Service
 description: >
   Sends a WhatsApp FlowButton that launches the PostcodeSearchElai flow for address capture or update with optional initial postcode.
 
-file: rest_agent/agent_wa_senders.py
+file: packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agent_wa_senders.py
 symbol: send_update_address_wa
 feature: Address and Maps Service
 description: >
   Sends a WhatsApp URL button linking to the Ordelo web address update form with recipient and restaurant reference parameters.
 
-file: rest_agent/agent_wa_senders.py
+file: packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agent_wa_senders.py
 symbol: CallbackButtonData
 feature: Address and Maps Service
 description: >

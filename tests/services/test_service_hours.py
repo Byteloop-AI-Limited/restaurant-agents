@@ -22,10 +22,10 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from restaurant_agent_core.services.service_hours.formatting import format_minutes
-from restaurant_agent_core.services.service_hours.parsing import parse_intervals_for_day, parse_week, to_minutes
-from restaurant_agent_core.services.service_hours.schedule import WeeklySchedule
-from restaurant_agent_core.services.service_hours.types import Interval, Weekday
+from restaurant_agent_runtime.services.service_hours.formatting import format_minutes
+from restaurant_agent_runtime.services.service_hours.parsing import parse_intervals_for_day, parse_week, to_minutes
+from restaurant_agent_runtime.services.service_hours.schedule import WeeklySchedule
+from restaurant_agent_runtime.services.service_hours.types import Interval, Weekday
 
 
 TZ = ZoneInfo("Europe/London")

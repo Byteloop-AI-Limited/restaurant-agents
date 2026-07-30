@@ -18,7 +18,7 @@ import subprocess
 
 import pytest
 
-from restaurant_agent_core.services import params
+from restaurant_agent_runtime.services import params
 
 
 def test_filter_dict_filters_and_selects_columns():

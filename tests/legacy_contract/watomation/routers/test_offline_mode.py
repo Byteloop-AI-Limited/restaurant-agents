@@ -86,7 +86,7 @@ def offline_module(monkeypatch):
 
     module = load_module(
         "test_offline_mode_module",
-        "restaurant_agent_core.watomation/routers/offline_mode.py",
+        "restaurant_agent_runtime.watomation/routers/offline_mode.py",
         monkeypatch,
         {
             "config": config_stub,
