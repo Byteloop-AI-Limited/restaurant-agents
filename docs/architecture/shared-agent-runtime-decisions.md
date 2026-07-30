@@ -401,14 +401,14 @@ Only a finding proven to block the move entered checkpoints 2-4.
 
 | Finding | Current references | Disposition |
 | --- | --- | --- |
-| `lg_utils.py` mixes LLM construction, legacy builders, thread lookup, graph display, and REPL helpers | `services/lg_utils.py:33-47,56-118,129-228,442-471,518-602` | The live Agent move stops importing its module-global model. Split/delete the remaining catch-all later after usage-specific tests exist. |
-| Shared WhatsApp diagnostic handlers still bypass runtime database clients | `watomation/on_message_graph_handler.py:33-34,127-171,198-308` | Separate runtime-injection follow-up; do not mix `/test`, `/test-t`, `/reset`, or payment-simulation behavior changes into Agent centralization. |
-| Payment helpers capture settings/client globals | `services/payment_ms/payment.py:18-36,40-137` | Separate service refactor with payment contract tests. |
-| Order code has competing legacy/new models and global settings | `services/order_management/order_db_ops.py:1-35`; `order_db_ops_new.py:1-36`; receipt imports `OrderItem` at `food_order_reciept.py:15-17` | Decide canonical model in a dedicated change; behavior differs and is too risky for this move. |
-| In-memory thread fallback remains in production utility imports | `services/thread_handlers.py:20-116`; used by `lg_utils.py:35,442-471` | Delete only after callers/tests are migrated away in a separate cleanup. |
-| AWS secret is loaded at import | `utils/aws_setting.py:101-108`; settings modules import `agent_env` | Separate configuration-lifecycle refactor; current tests intentionally stub this behavior. |
+| `lg_utils.py` mixed LLM construction, legacy builders, thread lookup, graph display, and REPL helpers | `rest_agent/state_debug.py`; `services/thread_management/graph_config.py` | Resolved 2026-07-30: the two live responsibilities moved behind focused tests and the catch-all was deleted. |
+| Shared WhatsApp diagnostic handlers bypassed runtime database clients | `watomation/on_message_graph_handler.py`; `tests/test_whatsapp_diagnostics.py` | Resolved by ADR-0010: simulations were removed, `/reset` uses the exact runtime database, and `/debug` remains authorized and read-only. |
+| Payment helpers captured settings/client globals | `services/payment_ms/payment.py`; `tests/services/payment_ms/test_payment.py` | Resolved: the active cancellation helper requires injected payment settings; unused creation/capture helpers and the inactive commented router were deleted. |
+| Order code had competing legacy/new models and global settings | `services/order_management/food_order_pymodel.py`; `order_item_pymodel.py` | Resolved by ADR-0009: `FoodOrder` and `OrderItem` are canonical boundary models and both dormant writers were deleted. |
+| In-memory thread fallback remained in production utility imports | `services/thread_management/graph_config.py`; `tests/services/thread_management/test_graph_config.py` | Resolved: active graph config uses the persistent `ThreadHandler` only; the fallback and its legacy utility caller were deleted. |
+| AWS secret was loaded at import | `config/bundle.py`; `tests/test_settings_bundle.py`; `tests/test_aws_secret_name.py` | Resolved by ADR-0011: explicit app composition performs one settings fetch and config/model imports are side-effect free. |
 | Restaurant/base URL and dedup caches are process-local | `config/params.py:30-32,48-132`; `watomation/dedup.py:23-39` | Document one-worker constraint; revisit only with multi-instance requirements. |
-| PGVector example/retriever code is inconsistent with the commented store property | `config/pg_setting.py:19,180-183,216-232` | Delete or repair in a dedicated dead-code cleanup. |
+| PGVector example/retriever code was inconsistent with the commented store property | `config/pg_setting.py` | Resolved: the unused example, retriever, and commented store property were deleted. |
 
 ## Post-migration cleanup ledger
 

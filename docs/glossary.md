@@ -46,7 +46,7 @@ integration with external payment and fulfilment systems.
 
 The per-run LangGraph context carrying the exact application runtime resources,
 including the WhatsApp client, database pool, recipient, Restaurant identity,
-presentation, settings, and Ordelo client. It is execution context, not
+presentation, project/payment settings, and Ordelo client. It is execution context, not
 persisted domain state.
 
 ### Customer
@@ -84,7 +84,9 @@ payment services, and address/geocoding providers.
 
 The authoritative persisted order aggregate. Delivery and takeaway are
 fulfilment variants of one FoodOrder, not separate order aggregates. Order items
-belong to the FoodOrder consistency boundary.
+belong to the FoodOrder consistency boundary. The absence of an internal
+catalog-order writer does not transfer aggregate authority to a payment or
+fulfilment integration.
 
 ### Fulfilment Projection
 
@@ -126,7 +128,8 @@ One node in the standard LangGraph: `triage_agent`, `delivery_agent`, or
 ### OrderItem
 
 A persisted line item belonging to a FoodOrder. It has no independent business
-lifecycle outside its order.
+lifecycle outside its order. Its canonical runtime model is independent of any
+database-writer implementation.
 
 ## P
 
@@ -184,6 +187,13 @@ Application. It contains identity, presentation, settings, and the exact async
 and sync WhatsApp clients. The record is frozen, but referenced clients and
 services are effectful and mutable.
 
+### RestaurantSettingsBundle
+
+The validated settings and external-client record loaded once at the
+application composition root. Configuration model imports are side-effect free;
+services receive bundle members through RestaurantRuntime, ContextSchema, or
+explicit parameters.
+
 ## S
 
 ### Service Hours
@@ -209,7 +219,9 @@ pickup progress. It is not a separate order aggregate.
 
 A persisted conversation-session record scoped by Restaurant and recipient. It
 manages active/inactive lifecycle, correlation, and retention, but remains
-runtime orchestration state rather than business truth.
+runtime orchestration state rather than business truth. The customer-accessible
+`/reset` command starts a new Thread lifecycle; it is not an order or payment
+simulation.
 
 ## W
 

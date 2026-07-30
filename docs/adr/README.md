@@ -23,6 +23,9 @@ decision; add a new ADR that supersedes it.
 | [0006](0006-external-payment-and-fulfilment-authority.md) | Accepted | External payment and fulfilment authority |
 | [0007](0007-separate-restaurant-identity-presentation-and-master-data.md) | Accepted | Separate Restaurant identity, presentation, and master data |
 | [0008](0008-markdown-is-the-documentation-source-of-truth.md) | Accepted | Markdown is the documentation source of truth |
+| [0009](0009-canonical-food-order-model-without-catalog-writer.md) | Accepted | Canonical FoodOrder model without an internal catalog writer |
+| [0010](0010-remove-live-whatsapp-simulation-commands.md) | Accepted | Remove live WhatsApp simulation commands from the shared runtime |
+| [0011](0011-explicit-settings-composition-lifecycle.md) | Accepted | Load settings at the application composition root |
 
 ## Creating an ADR
 

@@ -2,7 +2,9 @@
 
 ## Overview
 
-The Elai application implements an in-memory caching system to reduce database queries and improve performance. The caching mechanism is centralized in `config/params.py` and provides TTL-based (Time To Live) caching for restaurant configuration data.
+The shared runtime implements in-memory caches to reduce repeated Restaurant
+configuration lookups. The mechanism lives in
+`restaurant_agent_runtime.config.params` and uses a five-minute TTL.
 
 ## Cache Types
 
@@ -18,9 +20,11 @@ The Elai application implements an in-memory caching system to reduce database q
 
 **Usage**:
 ```python
-from config.params import get_restaurant_base_url_async
+from restaurant_agent_runtime.config.params import get_restaurant_base_url_async
 
-base_url = await get_restaurant_base_url_async("ELAS")
+base_url = await get_restaurant_base_url_async(
+    "ELAS", database_client=runtime.settings.database_client
+)
 # Returns: "https://api.restaurant.com"
 ```
 
@@ -36,9 +40,11 @@ base_url = await get_restaurant_base_url_async("ELAS")
 
 **Usage**:
 ```python
-from config.params import get_restaurant_master_cached
+from restaurant_agent_runtime.config.params import get_restaurant_master_cached
 
-restaurant = get_restaurant_master_cached("ELAS")
+restaurant = get_restaurant_master_cached(
+    "ELAS", database_client=runtime.settings.database_client
+)
 # Returns: RestaurantMaster instance with all restaurant data
 ```
 
@@ -63,11 +69,12 @@ rest_ref_upper = rest_ref.upper()  # "elas" → "ELAS"
 
 ### Core Functions
 
-#### `get_restaurant_base_url_async(rest_ref: str) -> str`
+#### `get_restaurant_base_url_async(rest_ref: str, *, database_client) -> str`
 Fetches restaurant base URL with caching.
 
 **Parameters**:
 - `rest_ref`: Restaurant reference code (e.g., "ELAS", "WREN")
+- `database_client`: Supabase client from the exact RestaurantRuntime
 
 **Returns**: Base URL string
 
@@ -75,14 +82,17 @@ Fetches restaurant base URL with caching.
 
 **Example**:
 ```python
-url = await get_restaurant_base_url_async("ELAS")
+url = await get_restaurant_base_url_async(
+    "ELAS", database_client=runtime.settings.database_client
+)
 ```
 
-#### `get_restaurant_master_cached(rest_ref: str) -> RestaurantMaster`
+#### `get_restaurant_master_cached(rest_ref: str, *, database_client) -> RestaurantMaster`
 Fetches RestaurantMaster instance with caching.
 
 **Parameters**:
 - `rest_ref`: Restaurant reference code
+- `database_client`: Supabase client from the exact RestaurantRuntime
 
 **Returns**: RestaurantMaster instance
 
@@ -90,8 +100,10 @@ Fetches RestaurantMaster instance with caching.
 
 **Example**:
 ```python
-restaurant = get_restaurant_master_cached("ELAS")
-admins = restaurant.get_admins()
+restaurant = get_restaurant_master_cached(
+    "ELAS", database_client=runtime.settings.database_client
+)
+admins = restaurant.get_admins(database_client=runtime.settings.database_client)
 ```
 
 ### Cache Management Functions
@@ -267,19 +279,21 @@ logger.info(f"No cache entry found for {cache_key}")
 
 ## Code References
 
-**File**: `config/params.py`
-- Lines 26-31: Cache storage definitions
-- Lines 54-84: `get_restaurant_master_cached` implementation
-- Lines 97-108: `get_restaurant_base_url_async` implementation
-- Lines 183-214: Cache reset functions
+**File**: `packages/restaurant-agent-runtime/src/restaurant_agent_runtime/config/params.py`
+- `_BASE_URL_CACHE` and `_RESTAURANT_MASTER_CACHE`: process-local storage
+- `get_restaurant_master_cached`: runtime-client-bound Restaurant lookup
+- `get_restaurant_base_url_async`: runtime-client-bound base URL lookup
+- `reset_restaurant_base_url_cache` and `reset_restaurant_master_cache`: manual invalidation
 
-**File**: `watomation/fapp.py`
-- Lines 245-262: Base URL cache reset endpoint
-- Lines 266-281: RestaurantMaster cache reset endpoint
+**File**: `packages/restaurant-agent-runtime/src/restaurant_agent_runtime/web/app_factory.py`
+- `reset_restaurant_base_url_cache_endpoint`: base URL invalidation endpoint
+- `reset_restaurant_master_cache_endpoint`: RestaurantMaster invalidation endpoint
 
 ## Future Enhancements
 
-Potential improvements to consider:
+The current one-worker-per-app contract makes these caches intentionally
+process-local. Revisit distributed cache semantics only if a multi-instance
+requirement is accepted. At that point, consider:
 
 1. **Redis integration**: Move to distributed cache for multi-instance deployments
 2. **Cache warming**: Pre-populate cache on application startup

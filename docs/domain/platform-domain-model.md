@@ -94,7 +94,7 @@ projection may be updated from an event but must not contradict its source.
 | --- | --- | --- |
 | `RestaurantIdentity` | Validated immutable value | Routes one app and selects one WABA namespace |
 | `RestaurantPresentation` | Immutable configuration value | Supplies app-owned branding |
-| `RestaurantSettingsBundle` | Environment/dependency record | Groups selected settings and clients |
+| `RestaurantSettingsBundle` | Environment/dependency record | Groups settings and clients loaded once at app composition |
 | `RestaurantRuntime` | Reader-style environment | Carries the exact app identity, settings, and WhatsApp clients |
 | `RestaurantPrompts` | Immutable input record | Supplies complete app-owned prompts |
 | `AgentBindings` | Record of functions/types | Supplies native WhatsApp callback composition values |
@@ -145,8 +145,13 @@ context. Events report something that has already happened.
 - External payment and fulfilment contexts are authoritative over their state.
 - Marketing consent is scoped to Customer plus Restaurant.
 - Complete prompts are app-owned.
+- Settings are loaded once at explicit application composition; configuration
+  model imports do not fetch secrets or publish process-global clients.
 - New graph/state semantics use an app-owned GraphAdapter rather than mutation
   of private shared-runtime internals.
+- The standard WhatsApp surface does not expose payment or order simulation
+  commands; `/reset` changes only Thread lifecycle and `/debug` is read-only and
+  authorized-user gated.
 
 ## Code References (Machine-Readable)
 
@@ -192,8 +197,9 @@ description: >
 
 ## Known Modeling Gaps
 
-- Legacy and newer order implementations coexist; canonical implementation
-  cleanup is tracked in `docs/to-do.md`.
+- Direct WhatsApp catalog-order creation is not part of the current standard
+  application flow. A future consumer requires a separately designed command
+  with injected persistence; ADR-0009 records the current no-writer decision.
 - FoodOrder fulfilment and payment fields are stringly typed; this document
   records authority but does not invent enums absent from the implemented
   contract.

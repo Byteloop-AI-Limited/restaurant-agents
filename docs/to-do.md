@@ -29,23 +29,29 @@ are complete. The following work is intentionally deferred.
 - [ ] Consider compiling the graph once only after measuring a concrete benefit
   and designing the asynchronous lifecycle and checkpointer behavior. Do not
   add speculative caches or locks.
-- [ ] Find and remove confirmed-unused import aliases or compatibility shims.
-- [ ] Split or reduce `services/lg_utils.py`, which currently mixes LLM
-  construction, legacy builders, thread lookup, graph display, and REPL helpers.
-- [ ] Inject runtime database clients into shared diagnostic WhatsApp handlers
-  before changing `/test`, `/test-t`, `/reset`, or payment-simulation behavior.
-- [ ] Refactor payment helpers that capture settings and clients globally, with
+- [x] Remove confirmed-unused configuration aliases, process-global settings
+  clients, and compatibility shims from production modules.
+- [x] Delete the `services/lg_utils.py` catch-all after moving its two live
+  responsibilities to focused state-debug and graph-config modules.
+- [x] Decide the production diagnostic boundary: remove `/test`, `/test-t`, and
+  `/paid3100`; retain runtime-bound `/reset` and authorized read-only `/debug`.
+  ADR-0010 records the accepted decision.
+- [x] Remove the three simulation handlers and bind `/reset` to the exact
+  runtime database settings, with focused handler-registration tests.
+- [x] Refactor payment helpers that capture settings and clients globally, with
   focused payment contract tests.
-- [ ] Choose a canonical order model before consolidating the competing legacy
-  and newer order-management implementations.
-- [ ] Remove the in-memory thread fallback only after its callers and tests have
-  migrated.
-- [ ] Move AWS secret loading out of module import only as a separate
-  configuration-lifecycle change.
+- [x] Choose `FoodOrder` and `OrderItem` as the canonical order models without
+  an internal catalog-order writer. ADR-0009 records the accepted decision.
+- [x] Extract `OrderItem` into its canonical model module, remove the two
+  confirmed-unused order writer modules, and retain focused active-flow
+  contract tests.
+- [x] Remove the in-memory thread fallback after its callers and tests migrated
+  to the database-only graph-config module.
+- [x] Move AWS secret loading out of module import and into the explicit app
+  composition boundary. ADR-0011 records the settings lifecycle.
 - [ ] Revisit process-local Restaurant/base-URL and deduplication caches only if
   multi-instance requirements change the current one-worker contract.
-- [ ] Delete or repair the inconsistent PGVector example/retriever code in a
-  dedicated dead-code cleanup.
+- [x] Delete the inconsistent, unused PGVector example/retriever code.
 
 The detailed rationale and source references remain in
 `docs/architecture/shared-agent-runtime-decisions.md`.
