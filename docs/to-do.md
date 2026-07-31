@@ -33,11 +33,12 @@ are complete. The following work is intentionally deferred.
   clients, and compatibility shims from production modules.
 - [x] Delete the `services/lg_utils.py` catch-all after moving its two live
   responsibilities to focused state-debug and graph-config modules.
-- [x] Decide the production diagnostic boundary: remove `/test`, `/test-t`, and
-  `/paid3100`; retain runtime-bound `/reset` and authorized read-only `/debug`.
-  ADR-0010 records the accepted decision.
-- [x] Remove the three simulation handlers and bind `/reset` to the exact
-  runtime database settings, with focused handler-registration tests.
+- [x] Decide the production diagnostic boundary: remove `/test` and `/test-t`;
+  retain `/paid3100`, runtime-bound `/reset`, and authorized read-only `/debug`.
+  ADR-0012 supersedes ADR-0010 and records the accepted boundary.
+- [x] Remove the two hard-coded order-reset handlers and bind `/paid3100` and
+  `/reset` to exact runtime database settings, with focused registration and
+  boundary tests.
 - [x] Refactor payment helpers that capture settings and clients globally, with
   focused payment contract tests.
 - [x] Choose `FoodOrder` and `OrderItem` as the canonical order models without

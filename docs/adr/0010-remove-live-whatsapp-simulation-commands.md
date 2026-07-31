@@ -1,8 +1,12 @@
 # ADR-0010: Remove Live WhatsApp Simulation Commands
 
-- Status: Accepted
+- Status: Superseded by ADR-0012
 - Date: 2026-07-30
 - Decision owners: Repository owner and maintainers
+
+ADR-0012 supersedes this diagnostic-boundary decision. `/test` and `/test-t`
+remain removed, while `/paid3100` is restored with explicit runtime
+dependencies.
 
 ## Context
 
@@ -46,4 +50,3 @@ capability.
 - `packages/restaurant-agent-runtime/src/restaurant_agent_runtime/watomation/on_message_graph_handler.py`
 - `docs/adr/0003-one-isolated-runtime-and-whatsapp-client-per-application.md`
 - `docs/webhook_endpoints.md`
-

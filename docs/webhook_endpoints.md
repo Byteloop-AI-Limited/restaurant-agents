@@ -38,11 +38,12 @@ this order:
 3. `/reset`, which marks the customer's persistent Threads inactive using the
    runtime database pool.
 4. Shared-location handling with runtime maps settings.
-5. `/debug`, which is read-only and ignores callers outside `ALLOWED_USERS`.
-6. Default graph handler.
+5. `/paid3100`, which posts a payment-complete simulation for the sender's
+   latest eligible order using exact runtime dependencies.
+6. `/debug`, which is read-only and ignores callers outside `ALLOWED_USERS`.
+7. Default graph handler.
 
-ADR-0010 removed `/test`, `/test-t`, and `/paid3100`; the shared production
-runtime has no payment or order simulation commands.
+ADR-0012 restores `/paid3100`; `/test` and `/test-t` remain removed.
 
 Callback registration covers delivery-address confirmation, collection-ready,
 Restaurant-order confirmation, service selection, and marketing consent.
@@ -139,6 +140,14 @@ description: >
 
 ```code-ref
 file: packages/restaurant-agent-runtime/src/restaurant_agent_runtime/watomation/on_message_graph_handler.py
+symbol: simulate_payment_complete
+feature: webhook-endpoints
+description: >
+  Implements the runtime-bound side-effecting `/paid3100` payment simulation.
+```
+
+```code-ref
+file: packages/restaurant-agent-runtime/src/restaurant_agent_runtime/watomation/on_message_graph_handler.py
 symbol: reset_thread
 feature: webhook-endpoints
 description: >
@@ -160,5 +169,5 @@ description: >
 - A stale-thread candidate with the wrong Restaurant prefix rejects the batch.
 - Background-task acknowledgement means work was queued, not completed; use
   activity reporting and application logs for completion evidence.
-- No live simulation commands are available through the standard WhatsApp
-  handler surface.
+- `/paid3100` is side-effecting and may advance the sender's external
+  payment/order workflow; the offline test gate never invokes it live.

@@ -12,6 +12,7 @@ prices, create payment intents, or capture funds.
 - [FoodOrder boundary model](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/services/order_management/food_order_pymodel.py)
 - [Receipt formatter](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/services/order_management/food_order_reciept.py)
 - [Delivery cancellation caller](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agents/delivery.py)
+- [`/paid3100` simulator](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/watomation/on_message_graph_handler.py)
 
 ## Payment-Complete Flow
 
@@ -30,6 +31,14 @@ The former direct Stripe webhook file was commented out and unregistered; it
 has been deleted. Payment completion enters the shared runtime only through the
 active order-event contract.
 
+## `/paid3100` Simulation Flow
+
+The standard WhatsApp handler exposes `/paid3100` under ADR-0012. It resolves
+the Ordelo base URL and the sender's latest order through the exact runtime
+database client. If the order is in `requires_payment`, it posts the established
+Stripe-shaped completion payload to Ordelo's `/payment-hooks/payment-complete`
+endpoint without following redirects. It does not accept an arbitrary order ID.
+
 ## Cancellation Flow
 
 When delivery times out, the delivery agent calls `cancel_payment` with the
@@ -47,6 +56,14 @@ shared-runtime caller used them. A future capture/create capability must start
 from an external contract and receive its dependencies explicitly.
 
 ## Code References (Machine-Readable)
+
+```code-ref
+file: packages/restaurant-agent-runtime/src/restaurant_agent_runtime/watomation/on_message_graph_handler.py
+symbol: simulate_payment_complete
+feature: payment-integration
+description: >
+  Invokes the external payment-complete hook for the sender's latest eligible order.
+```
 
 ```code-ref
 file: packages/restaurant-agent-runtime/src/restaurant_agent_runtime/services/payment_ms/payment.py
@@ -88,4 +105,6 @@ description: >
   contents.
 - Cancellation HTTP errors return `False`; the external payment system remains
   authoritative and may require operational reconciliation.
-- The `/paid3100` WhatsApp simulation command no longer exists in production.
+- `/paid3100` intentionally calls the external payment-complete hook for the
+  sender's latest order in `requires_payment`; it is a side-effecting
+  operational simulation, not a read-only diagnostic.

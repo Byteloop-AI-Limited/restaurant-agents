@@ -149,8 +149,9 @@ context. Events report something that has already happened.
   model imports do not fetch secrets or publish process-global clients.
 - New graph/state semantics use an app-owned GraphAdapter rather than mutation
   of private shared-runtime internals.
-- The standard WhatsApp surface does not expose payment or order simulation
-  commands; `/reset` changes only Thread lifecycle and `/debug` is read-only and
+- The standard WhatsApp surface exposes the side-effecting `/paid3100` payment
+  simulator for the sender's latest eligible order. `/test` and `/test-t` are
+  absent; `/reset` changes only Thread lifecycle and `/debug` is read-only and
   authorized-user gated.
 
 ## Code References (Machine-Readable)
