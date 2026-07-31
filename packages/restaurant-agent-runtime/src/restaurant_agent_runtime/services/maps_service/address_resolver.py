@@ -3,14 +3,12 @@ Google Maps API address resolution and geocoding utilities
   . Resolves UK postcodes to full addresses using Google Geocoding API
   . Extracts structured address components from geocoding results
   . Validates and formats address data with Pydantic models
-  . Provides address resolver singleton instance
   . Handles API errors and logging
   Functions/Classes:
     . AddressComponent
     . GeocodeResult
     . GeocodeResponse
     . AddressResolver
-    . address_resolver
 """
 
 # %%
@@ -18,9 +16,6 @@ import requests
 from typing import Optional, Dict, Any, List
 from pydantic import BaseModel, Field, field_validator
 import logging
-from restaurant_agent_runtime.config import google_settings
-
-API_KEY = google_settings.maps_api_key
 
 # %%
 
@@ -277,41 +272,3 @@ class AddressResolver:
             longitude=longitude,
             raw_response=data,
         )
-
-
-# %% Export address_resolver
-address_resolver = AddressResolver(api_key=API_KEY)
-
-if __name__ == "__main__":
-    address = address_resolver.get_address_from_postcode("br66hx")
-    print(address.model_dump_json(indent=2, exclude={"raw_response"}))
-
-
-# %%
-
-""" # %% TEST
-# %% usage
-# Example usage
-
-# Create an instance of the AddressResolver
-address_resolver = AddressResolver(api_key=API_KEY)
-address_resolver
-# %%
-    # Example 1: Get address from coordinates (London Eye)
-london_eye_address = address_resolver.get_address_from_coordinates(
-    51.51163582887858, -0.13544498014148215
-)
-print("Address from coordinates:")
-print(london_eye_address.model_dump_json(indent=2, exclude={"raw_response"}))
-
-type(london_eye_address)
-
-# %%
-    # Example 2: Get address from postcode
-postcode_address = address_resolver.get_address_from_postcode("br66dn")  # Buckingham Palace
-print("\nAddress from postcode:")
-print(postcode_address.model_dump_json(indent=2, exclude={"raw_response"}))
-
-type(postcode_address)
-# %%
-"""

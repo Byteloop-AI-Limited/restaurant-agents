@@ -65,14 +65,10 @@ def _register_whatsapp_handlers(
     )
     from restaurant_agent_runtime.watomation.on_message_graph_handler import (
         ALLOWED_USERS_FILTER,
-        WHEN_ADHOC_TEST,
-        WHEN_ADHOC_TEST_TAKEAWAY,
         WHEN_DEBUG,
         WHEN_PAYMENT_COMPLETE,
         WHEN_RESET,
         create_out_of_hours_filter,
-        handle_adhoc_test,
-        handle_adhoc_test_takeaway,
         handle_debug_state,
         handle_request_location_response,
         handle_wa_msg_in_graph,
@@ -90,22 +86,26 @@ def _register_whatsapp_handlers(
     async def bound_reset(client, message):
         return await reset_thread(client, message, runtime=runtime)
 
-    async def bound_adhoc(client, message):
-        return await handle_adhoc_test(
-            client, message, runtime=runtime, graph_adapter=graph_adapter
-        )
-
-    async def bound_adhoc_takeaway(client, message):
-        return await handle_adhoc_test_takeaway(
-            client, message, runtime=runtime, graph_adapter=graph_adapter
-        )
-
     async def bound_debug(client, message):
         return await handle_debug_state(client, message, graph_adapter=graph_adapter)
 
     async def bound_graph(client, message):
         return await handle_wa_msg_in_graph(
             client, message, graph_adapter=graph_adapter
+        )
+
+    async def bound_location(client, message):
+        return await handle_request_location_response(
+            client,
+            message,
+            runtime=runtime,
+        )
+
+    async def bound_payment_complete(client, message):
+        return await simulate_payment_complete(
+            client,
+            message,
+            runtime=runtime,
         )
 
     async def bound_delivery_address(client, callback):
@@ -157,13 +157,10 @@ def _register_whatsapp_handlers(
             callback=send_redirect_to_offline_mode, filters=ALLOWED_USERS_FILTER
         ),
         MessageHandler(callback=bound_reset, filters=WHEN_RESET),
+        MessageHandler(callback=bound_location, filters=filters.location),
         MessageHandler(
-            callback=handle_request_location_response, filters=filters.location
-        ),
-        MessageHandler(callback=bound_adhoc_takeaway, filters=WHEN_ADHOC_TEST_TAKEAWAY),
-        MessageHandler(callback=bound_adhoc, filters=WHEN_ADHOC_TEST),
-        MessageHandler(
-            callback=simulate_payment_complete, filters=WHEN_PAYMENT_COMPLETE
+            callback=bound_payment_complete,
+            filters=WHEN_PAYMENT_COMPLETE,
         ),
         MessageHandler(callback=bound_debug, filters=WHEN_DEBUG),
         MessageHandler(callback=bound_graph),

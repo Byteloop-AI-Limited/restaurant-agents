@@ -1,21 +1,4 @@
-"""
-Order hook endpoints for the agent
-  . Provides FastAPI router for order-related webhook operations
-  . Supports retrieval of minimum order value configuration
-  . Accepts restaurant coordinates directly or via rest_ref lookup
-  . Delegates pricing lookup to services.order_service helpers
-  . Creates new orders with order items and initiates payment capture
-  . Returns payment URLs for customer checkout
-  . Validates rest_ref path parameter against restaurant_master
-Functions/Classes:
-  . validate_rest_ref - Validates rest_ref and returns 404 if invalid
-  . CreateOrderRequest - Pydantic model for order creation requests
-  . get_min_order_value - Returns minimum order value using shared service helper
-  . create_order - Creates order with items and captures payment
-  . payment_complete - Handles payment completion webhook
-  . address_update - Triggers graph to refresh address state after an update
-  . takeaway_ready - Notifies customer that their takeaway order is ready for collection
-"""
+"""Runtime-bound external order and takeaway event endpoints."""
 
 # %%
 
@@ -95,11 +78,9 @@ def format_time_for_user(pickup_time: str | None) -> str:
     "/{rest_ref}/payment-complete/{recipient}/{thread_id}",
     summary="Mark payment as complete for an order",
     description="""
-    Accepts a FoodOrder-shaped payload from the payment service when a payment succeeds.
-    Updates the order payment status and nudges the graph to verify the payment.
-    Called when either delivery or takeaway process is initiated:
-    1. rider_agent/payment_hooks/payment-complete/handle_payment_complete; This is exclusive for deliveries.
-    2. rider_agent/payment_hooks/pay-at-restaurant; This is exclusive for deliveries.
+    Accepts a persisted FoodOrder payload from the external payment/order
+    context, sends the customer receipt, and queues the appropriate delivery or
+    takeaway graph state update.
     """,
 )
 async def payment_complete(
@@ -128,7 +109,8 @@ async def payment_complete(
     logger.info(f"thread_id: {thread_id}")
 
     customer_receipt_header, customer_receipt_text = build_wa_order_reciept_for_cust(
-        food_order=food_order
+        food_order=food_order,
+        database_client=runtime.settings.database_client,
     )
 
     formatted_wa_text = f"""
@@ -212,11 +194,10 @@ async def payment_complete(
 
 @router.post(
     "/{rest_ref}/address-update/{recipient}",
-    summary="Mark payment as complete for an order",
+    summary="Refresh graph state after an external address update",
     description="""
-    Accepts a FoodOrder-shaped payload from the payment service when a payment succeeds.
-    Updates the order payment status and nudges the graph to verify the payment.
-    Called from: rider_agent/payment_hooks/handle_payment_complete
+    Accepts the externally persisted customer address, acknowledges the
+    customer, and queues delivery-address reconfirmation.
     """,
 )
 async def address_update(
@@ -227,7 +208,6 @@ async def address_update(
     runtime: RestaurantRuntime = Depends(get_restaurant_runtime),
     graph_adapter: GraphAdapter = Depends(get_graph_adapter),
 ):
-    # Is this validate_rest_ref required?
     rest_ref = validate_rest_ref(rest_ref, runtime)
 
     # Parse and log the incoming customer_master_row payload

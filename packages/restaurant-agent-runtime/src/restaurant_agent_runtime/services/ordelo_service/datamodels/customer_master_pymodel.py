@@ -30,11 +30,9 @@ class CustomerMaster(BaseModel):
     lon: Optional[float] = None  # FLOAT NULL
 
     @classmethod
-    def from_cust_id(cls, cust_id: str) -> "CustomerMaster":
-        from restaurant_agent_runtime.config import client_ordelo
-
+    def from_cust_id(cls, cust_id: str, *, database_client) -> "CustomerMaster":
         resp = (
-            client_ordelo.table("customer_master")
+            database_client.table("customer_master")
             .select("*")
             .eq("cust_id", cust_id)
             .execute()
@@ -52,13 +50,11 @@ class CustomerMaster(BaseModel):
         return cls(**row)
 
     @classmethod
-    def from_customer_id(cls, cust_id: str) -> "CustomerMaster":
-        return cls.from_cust_id(cust_id)
+    def from_customer_id(cls, cust_id: str, *, database_client) -> "CustomerMaster":
+        return cls.from_cust_id(cust_id, database_client=database_client)
 
     @classmethod
-    def upsert(cls, **payload) -> "CustomerMaster":
-        from restaurant_agent_runtime.config import client_ordelo
-
+    def upsert(cls, *, database_client, **payload) -> "CustomerMaster":
         filtered_payload = {
             key: value for key, value in payload.items() if key in cls.model_fields
         }
@@ -70,7 +66,7 @@ class CustomerMaster(BaseModel):
         )
 
         resp = (
-            client_ordelo.table("customer_master")
+            database_client.table("customer_master")
             .upsert(validated_payload, on_conflict="cust_id")
             .execute()
         )
@@ -86,21 +82,6 @@ class CustomerMaster(BaseModel):
                 f"Upsert failed for customer with cust_id={validated_payload['cust_id']}"
             )
         return cls(**data[0])
-
-    # @classmethod
-    # def add_consented_rest_ref(cls, cust_id: str, rest_ref: str):
-    #     from restaurant_agent_runtime.config import client_ordelo
-
-    #     cust = cls.from_customer_id(cust_id)
-    #     if rest_ref in cust.consented_rest_refs:
-    #         return
-    #     updated = cust.consented_rest_refs + [rest_ref]
-    #     (
-    #         client_ordelo.table("customer_master")
-    #         .update({"consented_rest_refs": updated})
-    #         .eq("cust_id", cust_id)
-    #         .execute()
-    #     )
 
     @field_validator("house_number", mode="before")
     def set_default_house_number(cls, v):

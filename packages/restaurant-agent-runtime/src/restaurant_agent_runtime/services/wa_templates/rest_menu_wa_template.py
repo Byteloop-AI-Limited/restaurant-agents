@@ -175,6 +175,7 @@ async def send_restaurant_menu_non_carousel(
     rest_menu: RestMenuQueryParams,
     wa_client,
     logo_url: str,
+    database_client,
 ):
     """
     Send a non-carousel restaurant menu message + image with CTA button.
@@ -189,7 +190,10 @@ async def send_restaurant_menu_non_carousel(
     rest_ref = rest_menu.rest_ref
     rest_menu_query_params = rest_menu_params.to_query_params()
 
-    restaurant_base_url = await get_restaurant_base_url_async("RESTAURANT_MENU")
+    restaurant_base_url = await get_restaurant_base_url_async(
+        "RESTAURANT_MENU",
+        database_client=database_client,
+    )
     restaurant_url = (
         f"{restaurant_base_url}/restaurant/{rest_ref.lower()}?{rest_menu_query_params}"
     )

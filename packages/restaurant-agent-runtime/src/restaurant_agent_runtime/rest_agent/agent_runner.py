@@ -43,13 +43,15 @@ from restaurant_agent_runtime.rest_agent.agents.multi_agent import build_multi_a
 from restaurant_agent_runtime.rest_agent.agents.takeaway import build_takeaway_agent
 from restaurant_agent_runtime.rest_agent.agents.triage import build_triage_agent
 from restaurant_agent_runtime.rest_agent.prompts import RestaurantPrompts
-from restaurant_agent_runtime.services.lg_utils import (
-    get_config_for_recipient,
+from restaurant_agent_runtime.rest_agent.state_debug import (
     get_state_values,
     shorten_state_messages,
 )
 from restaurant_agent_runtime.services.ordelo_service.ordelo_service import OrdeloService
 from restaurant_agent_runtime.services.thread_management import ThreadHandler
+from restaurant_agent_runtime.services.thread_management.graph_config import (
+    get_config_for_recipient,
+)
 from restaurant_agent_runtime.watomation import activity
 
 STANDARD_AGENT_NAMES = frozenset(
@@ -226,7 +228,8 @@ async def run_rest_graph_with_custom_msg(
             customer_master,
             ask_for_consent,
         ) = await OrdeloService(
-            rest_ref=runtime.identity.rest_ref
+            rest_ref=runtime.identity.rest_ref,
+            database_client=runtime.settings.database_client,
         ).get_or_create_customer_master(recipient, wa_name)
 
         if customer_master.postcode is None:
@@ -278,6 +281,7 @@ async def run_rest_graph_with_custom_msg(
         restaurant_name=runtime.presentation.display_name,
         restaurant_logo_url=runtime.presentation.logo_url or "",
         project_settings=runtime.settings.project,
+        payment_settings=runtime.settings.payment,
         client_ordelo=runtime.settings.database_client,
     )
 

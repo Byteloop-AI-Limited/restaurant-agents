@@ -1,11 +1,5 @@
-"""
-Map services for address resolution and geocoding
-  . Provides address resolver utilities
-  . Integrates with Google Maps API
-  . Handles postcode to address conversion
-"""
+"""Runtime-bound address resolution models and service."""
 
-__all__ = [
-    "address_resolver"
-]
-from .address_resolver import address_resolver
+from .address_resolver import AddressResolver, UKAddress
+
+__all__ = ["AddressResolver", "UKAddress"]

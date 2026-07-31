@@ -13,12 +13,11 @@ Order receipt generation and formatting utilities
 
 # %%
 from restaurant_agent_runtime.services.order_management.food_order_pymodel import FoodOrder
-from restaurant_agent_runtime.services.order_management.order_db_ops_new import OrderItem
-from restaurant_agent_runtime.config import client_ordelo
+from restaurant_agent_runtime.services.order_management.order_item_pymodel import OrderItem
 from typing import List, Tuple
 
 
-def _fetch_order_items(order_id: str) -> List[dict]:
+def _fetch_order_items(order_id: str, *, database_client) -> List[dict]:
     """Helper to retrieve order_items rows for the given order_id.
 
     Args:
@@ -30,7 +29,7 @@ def _fetch_order_items(order_id: str) -> List[dict]:
     """
     try:
         response = (
-            client_ordelo.table("order_item")
+            database_client.table("order_item")
             .select("product_name, quantity, price, modifications")
             .eq("order_id", order_id)
             .execute()
@@ -74,33 +73,30 @@ def _format_order_item_lines(items_data: List[dict]) -> List[str]:
 
 
 def build_wa_order_reciept_for_cust(
-    order_id: str = None, food_order: FoodOrder = None
+    *, food_order: FoodOrder, database_client
 ) -> Tuple[str, str]:
     """Create WhatsApp order-receipt text with basic markdown.
 
-    The function fetches the *food_order* and *order_items* rows for the provided
-    ``order_id`` and converts them into a WhatsApp-friendly receipt message.
+    The function fetches persisted line items for the provided aggregate and
+    converts them into a WhatsApp-friendly receipt message.
 
     WhatsApp supports a subset of Markdown: ``*bold*``, ``_italic_`` and `````monospace````.
     We use ``*`` for bold highlights and a simple middle-dot (•) as a bullet.
 
     Args:
-        order_id: The unique order ID (e.g. ``QPRX-28``).
+        food_order: The validated persisted order aggregate.
+        database_client: The exact RestaurantRuntime database client.
 
     Returns:
         A tuple ``(header, text)`` suitable for the ``header`` and ``text``
         parameters in ``WhatsApp.send_message``.
     """
 
-    # 1️⃣ Fetch models
-    if not food_order:
-        order = FoodOrder.from_order_id(order_id)
-        if not order:
-            raise ValueError(f"Order {order_id} not found")
-    else:
-        order = food_order
-
-    order_items = _fetch_order_items(order.order_id)
+    order = food_order
+    order_items = _fetch_order_items(
+        order.order_id,
+        database_client=database_client,
+    )
     if not order_items:
         raise ValueError(f"No order_items found for {order.order_id}")
 
@@ -148,8 +144,9 @@ def build_wa_order_reciept_for_cust(
 
 
 def build_wa_order_reciept_for_rest(
-    order_id: str = None,
-    food_order: FoodOrder = None,
+    *,
+    food_order: FoodOrder,
+    database_client=None,
     order_items: List[OrderItem] = None,
 ) -> Tuple[str, str]:
     """Build WhatsApp receipt text for the restaurant.
@@ -160,20 +157,20 @@ def build_wa_order_reciept_for_rest(
           customer-facing value.
 
     Args:
-        order_id: Order ID to fetch order details (used if food_order not provided).
-        food_order: FoodOrder Pydantic model (should be provided with order_items).
-        order_items: List of OrderItem Pydantic models (should be provided with food_order).
+        food_order: The validated persisted order aggregate.
+        database_client: Required only when ``order_items`` is omitted.
+        order_items: Optional validated line items supplied by the caller.
     """
-    if not food_order:
-        order = FoodOrder.from_order_id(order_id)
-        if not order:
-            raise ValueError(f"Order {order_id} not found")
-    else:
-        order = food_order
+    order = food_order
 
     # Use provided order_items if available, otherwise fetch from DB
     if order_items is None:
-        items_data = _fetch_order_items(order.order_id)
+        if database_client is None:
+            raise ValueError("database_client is required when order_items are omitted")
+        items_data = _fetch_order_items(
+            order.order_id,
+            database_client=database_client,
+        )
         if not items_data:
             raise ValueError(f"No order_items found for {order.order_id}")
     else:
@@ -212,60 +209,3 @@ def build_wa_order_reciept_for_rest(
         text_parts.extend(["", "*Notes:*", f"_{order.notes}_"])
 
     return header, "\n".join(text_parts).strip()
-
-
-# %%
-""" Test
-
-
-# %%
-build_wa_order_reciept_for_cust("OROT-65")
-
-# %%
-
-order_items = (
-    client_ordelo.table("order_item").select("*").eq("order_id", "QPRX-28").execute().data
-)
-# %%
-food_order = FoodOrder.from_order_id("QPRX-28")
-
-# %%
-
-food_order, order_items
-
-# %% sending whatsapp receipt
-# Send as interactive message with URL button
-from restaurant_agent_runtime.config import async_wa_client as wa
-from pywa.types import ButtonUrl
-
-recipient = "447448440754"
-href = "https://wa.me/447448440754"
-
-address_confirmation_y = "y"
-address_confirmation_n = "n"
-
-header, text = build_wa_order_reciept_for_cust("TMCH-30")
-header_rest, text_rest = build_wa_order_reciept_for_rest("TMCH-30")
-
-await wa.send_message(
-    to=recipient,
-    header=header,
-    text=text,
-    reply_to_message_id=None,
-    buttons=[
-        Button(title="Notify Driver", callback_data=address_confirmation_y),
-        Button(title="Confirmation Code", callback_data=address_confirmation_n),
-    ],
-)
-
-await wa.send_message(
-    to=recipient,
-    header=header_rest,
-    text=text_rest,
-    reply_to_message_id=None,
-    buttons=[
-        Button(title="Notify Driver", callback_data=address_confirmation_y),
-        Button(title="Confirmation Code", callback_data=address_confirmation_n),
-    ],
-)
-"""

@@ -200,7 +200,10 @@ async def select_consent_handler(
     consent_given = str(callback_data_dict.get("response", "")).lower() == "yes"
 
     if rest_ref:
-        ordelo_service = OrdeloService(rest_ref=str(rest_ref).upper())
+        ordelo_service = OrdeloService(
+            rest_ref=str(rest_ref).upper(),
+            database_client=runtime.settings.database_client,
+        )
         await ordelo_service.update_cust_rest_map(
             UpdateCustRestMapRequest(
                 cust_id=recipient,

@@ -2,7 +2,7 @@
 Unit tests for Ordelo service Pydantic datamodels
     . Loads CustomerMaster, CreateOrUpdateCustomerRequest, UpdateAddressRequest, UpdateCustRestMapRequest
     . Loads CustRestMap with consent-window logic
-    . Stubs config.client_ordelo via FakeSupabaseClient
+    . Injects FakeSupabaseClient into lookup and upsert operations
     . Asserts validators, lookup/upsert helpers and consent logic
   Functions/Classes:
     . test_customer_master_defaults_for_house_number_and_street
@@ -33,37 +33,16 @@ from tests._stubs.config_stub import (
 )
 
 
-@pytest.fixture(autouse=True)
-def _stub_config(monkeypatch):
-    """Inject a fake `config` module before importing the datamodels."""
-    import sys
-    from tests._stubs.config_stub import build_config_stub
-
-    config_stub = build_config_stub()
-    monkeypatch.setitem(sys.modules, "restaurant_agent_runtime.config", config_stub)
-    yield config_stub
-
-
 @pytest.fixture
 def customer_module():
-    # Import inside fixture to honour monkeypatched config
-    import importlib
     import restaurant_agent_runtime.services.ordelo_service.datamodels.customer_master_pymodel as module
-    importlib.reload(module)
     return module
 
 
 @pytest.fixture
 def cust_rest_map_module():
-    import importlib
     import restaurant_agent_runtime.services.ordelo_service.datamodels.cust_rest_map_pymodel as module
-    importlib.reload(module)
     return module
-
-
-def _patch_client_ordelo(monkeypatch, fake_client):
-    import sys
-    sys.modules["restaurant_agent_runtime.config"].client_ordelo = fake_client
 
 
 def test_customer_master_defaults_for_house_number_and_street(customer_module):
@@ -77,46 +56,50 @@ def test_customer_master_defaults_for_house_number_and_street(customer_module):
     assert cm.cust_name is None
 
 
-def test_customer_master_from_cust_id_returns_instance(customer_module, monkeypatch):
+def test_customer_master_from_cust_id_returns_instance(customer_module):
     fake_client = FakeSupabaseClient(
         table_data={
             "customer_master": [{"cust_id": "447000000001", "cust_name": "Bas"}]
         }
     )
-    _patch_client_ordelo(monkeypatch, fake_client)
-
-    cm = customer_module.CustomerMaster.from_cust_id("447000000001")
+    cm = customer_module.CustomerMaster.from_cust_id(
+        "447000000001",
+        database_client=fake_client,
+    )
 
     assert cm.cust_id == "447000000001"
     assert cm.cust_name == "Bas"
 
 
-def test_customer_master_from_cust_id_raises_when_missing(customer_module, monkeypatch):
+def test_customer_master_from_cust_id_raises_when_missing(customer_module):
     fake_client = FakeSupabaseClient(table_data={"customer_master": []})
-    _patch_client_ordelo(monkeypatch, fake_client)
-
     with pytest.raises(ValueError):
-        customer_module.CustomerMaster.from_cust_id("missing")
+        customer_module.CustomerMaster.from_cust_id(
+            "missing",
+            database_client=fake_client,
+        )
 
 
-def test_customer_master_upsert_requires_cust_id(customer_module, monkeypatch):
+def test_customer_master_upsert_requires_cust_id(customer_module):
     fake_client = FakeSupabaseClient(table_data={"customer_master": []})
-    _patch_client_ordelo(monkeypatch, fake_client)
-
     with pytest.raises(ValueError):
-        customer_module.CustomerMaster.upsert(cust_name="Bas")
+        customer_module.CustomerMaster.upsert(
+            database_client=fake_client,
+            cust_name="Bas",
+        )
 
 
-def test_customer_master_upsert_returns_instance(customer_module, monkeypatch):
+def test_customer_master_upsert_returns_instance(customer_module):
     fake_client = FakeSupabaseClient(
         table_data={
             "customer_master": [{"cust_id": "447000000001", "cust_name": "Bas"}]
         }
     )
-    _patch_client_ordelo(monkeypatch, fake_client)
-
     cm = customer_module.CustomerMaster.upsert(
-        cust_id="447000000001", cust_name="Bas", ignored="x"
+        database_client=fake_client,
+        cust_id="447000000001",
+        cust_name="Bas",
+        ignored="x",
     )
 
     assert cm.cust_id == "447000000001"
@@ -167,7 +150,7 @@ def test_update_cust_rest_map_request_serialises_datetime(customer_module):
 
 
 def test_cust_rest_map_from_cust_id_and_rest_ref_returns_instance(
-    cust_rest_map_module, monkeypatch
+    cust_rest_map_module,
 ):
     fake_client = FakeSupabaseClient(
         table_data={
@@ -180,10 +163,10 @@ def test_cust_rest_map_from_cust_id_and_rest_ref_returns_instance(
             ]
         }
     )
-    _patch_client_ordelo(monkeypatch, fake_client)
-
     record = cust_rest_map_module.CustRestMap.from_cust_id_and_rest_ref(
-        "447000000001", "elas"
+        "447000000001",
+        "elas",
+        database_client=fake_client,
     )
 
     assert record.has_consent is True
@@ -193,18 +176,18 @@ def test_cust_rest_map_from_cust_id_and_rest_ref_returns_instance(
 
 
 def test_cust_rest_map_from_cust_id_raises_when_missing(
-    cust_rest_map_module, monkeypatch
+    cust_rest_map_module,
 ):
     fake_client = FakeSupabaseClient(table_data={"cust_rest_map": []})
-    _patch_client_ordelo(monkeypatch, fake_client)
-
     with pytest.raises(ValueError):
         cust_rest_map_module.CustRestMap.from_cust_id_and_rest_ref(
-            "447000000001", "elas"
+            "447000000001",
+            "elas",
+            database_client=fake_client,
         )
 
 
-def test_cust_rest_map_upsert_returns_instance(cust_rest_map_module, monkeypatch):
+def test_cust_rest_map_upsert_returns_instance(cust_rest_map_module):
     fake_client = FakeSupabaseClient(
         table_data={
             "cust_rest_map": [
@@ -216,13 +199,12 @@ def test_cust_rest_map_upsert_returns_instance(cust_rest_map_module, monkeypatch
             ]
         }
     )
-    _patch_client_ordelo(monkeypatch, fake_client)
-
     record = cust_rest_map_module.CustRestMap.upsert(
         cust_id="447000000001",
         rest_ref="elas",
         has_consent=True,
         consent_dtts=datetime.datetime(2026, 1, 1, tzinfo=timezone.utc),
+        database_client=fake_client,
     )
 
     assert record.has_consent is True

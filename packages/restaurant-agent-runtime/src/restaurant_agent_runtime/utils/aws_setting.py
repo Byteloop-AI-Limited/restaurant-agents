@@ -11,8 +11,6 @@ Functions/Classes
   . is_running_on_lambda
   . get_secrets_client
   . get_agent_env
-Module Values
-  . agent_env
 """
 
 # %%
@@ -101,17 +99,3 @@ def get_agent_env(secret_name: str | None = None) -> dict:
         raise RuntimeError(
             f"AWS secret '{use_secret_name}' does not contain valid JSON"
         ) from exc
-
-
-# Secret name is resolved from AWS_SETTINGS_SECRET_NAME (via AwsSettings) so it
-# is configurable per environment. Fail fast with a clear error if it is empty.
-agent_env = get_agent_env(secret_name=DEFAULT_AGENT_SECRET_NAME)
-if not agent_env:
-    raise RuntimeError(
-        "Unable to load application settings from AWS Secrets Manager. "
-        "Check AWS_SETTINGS_* configuration and IAM permissions."
-    )
-
-# Secret-management procedures belong in deployment documentation. Keeping them
-# out of this module prevents shared runtime code from carrying environment- or
-# restaurant-specific resource names.

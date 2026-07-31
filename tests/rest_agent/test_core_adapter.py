@@ -49,10 +49,14 @@ def core_runner(monkeypatch):
     harness = ModuleType("restaurant_agent_runtime.rest_agent.agents.agent_harness")
     harness.ContextSchema = object
 
-    lg_utils = ModuleType("restaurant_agent_runtime.services.lg_utils")
-    lg_utils.get_config_for_recipient = None
-    lg_utils.get_state_values = None
-    lg_utils.shorten_state_messages = None
+    state_debug = ModuleType("restaurant_agent_runtime.rest_agent.state_debug")
+    state_debug.get_state_values = None
+    state_debug.shorten_state_messages = None
+
+    graph_config = ModuleType(
+        "restaurant_agent_runtime.services.thread_management.graph_config"
+    )
+    graph_config.get_config_for_recipient = None
 
     ordelo_service = ModuleType(
         "restaurant_agent_runtime.services.ordelo_service.ordelo_service"
@@ -93,11 +97,14 @@ def core_runner(monkeypatch):
                 "build_triage_agent",
                 "triage_agent",
             ),
-            "restaurant_agent_runtime.services.lg_utils": lg_utils,
+            "restaurant_agent_runtime.rest_agent.state_debug": state_debug,
             "restaurant_agent_runtime.services.ordelo_service.ordelo_service": (
                 ordelo_service
             ),
             "restaurant_agent_runtime.services.thread_management": thread_management,
+            "restaurant_agent_runtime.services.thread_management.graph_config": (
+                graph_config
+            ),
             "restaurant_agent_runtime.watomation": watomation,
         },
     )

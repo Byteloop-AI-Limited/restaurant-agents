@@ -181,6 +181,7 @@ async def send_restaurant_menu(
     rest_ref: str,
     wa_client: WhatsApp,
     logo_url: str,
+    database_client,
     order_type: Literal["delivery", "takeaway"] = "delivery",
     distance: float = 0.5,
 ) -> ValueError | None:
@@ -201,6 +202,7 @@ async def send_restaurant_menu(
             rest_menu=rest_menu_query_params,
             wa_client=wa_client,
             logo_url=logo_url,
+            database_client=database_client,
         )
     except ValueError as err:
         return err
