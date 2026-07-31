@@ -1,19 +1,7 @@
-"""
-Google API settings and client configuration for the agent
-  . Defines GoogleSettings for service account and API key management
-  . Provides get_client method to instantiate gspread client for Google Sheets
-  . Handles credential decoding from base64-encoded JSON
-  . Authenticates using OAuth2 service account credentials
-  . Loads configuration from AWS environment settings
-  Functions/Classes:
-    . GoogleSettings
-    . google_settings
-    . g_client
-"""
+"""Google settings model constructed at the application composition root."""
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from restaurant_agent_runtime.utils.aws_setting import agent_env
 from pydantic import Field
 
 
@@ -30,17 +18,3 @@ class GoogleSettings(BaseSettings):
         """Return the disabled Sheets placeholder retained by the source project."""
 
         return "dummy"
-
-
-google_settings = GoogleSettings(**agent_env)
-g_client = google_settings.get_client()
-
-# %% Usage
-# sheet =g_client.open("elai_takeaway_menu").sheet1
-# sheet.get_all_records()
-
-# %% How to create encoded creds
-# with open(f'{project_setting.get_project_root()}/google_creds.json', "r") as file:
-#     json_content = file.read()
-
-# encoded_credentials = base64.b64encode(json_content.encode()).decode()

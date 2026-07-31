@@ -1,23 +1,10 @@
-"""
-Project-level settings and configuration for the agent
-  . Defines ProjectSetting for salt and restaurant reference
-  . Provides get_project_root function to determine project directory
-  . Fetches Ordelo app URL on demand
-  . Loads configuration from AWS environment settings
-  . Exposes project_root property for path resolution
-  Functions/Classes:
-    . get_project_root
-    . ProjectSetting
-    . get_ordelo_url
-    . project_settings
-"""
+"""Project settings model constructed at the application composition root."""
 
 import os
 from typing import Any
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from loguru import logger
-from restaurant_agent_runtime.utils.aws_setting import agent_env
 from pydantic import Field
 
 # %%
@@ -53,6 +40,3 @@ class ProjectSetting(BaseSettings):
         return get_project_root()
 
     model_config = SettingsConfigDict(extra="allow")
-
-
-project_settings = ProjectSetting(**agent_env)

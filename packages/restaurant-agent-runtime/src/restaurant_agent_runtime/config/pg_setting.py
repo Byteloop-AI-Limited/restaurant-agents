@@ -1,22 +1,12 @@
-"""
-PostgreSQL and Supabase database settings and client initialization
-  . Defines PgSetting for database URIs and API credentials
-  . Provides async Supabase client initialization
-  . Configures PGVector for vector similarity search
-  . Manages connection pooling with AsyncConnectionPool
-  . Supports multiple database instances
-  . Loads configuration from AWS environment settings
-  Functions/Classes:
-    . PgSetting
-    . pg_settings
-    . pg_settings_ordelo
-    . client
-    . client_ordelo
+"""PostgreSQL and Supabase settings for one restaurant runtime.
+
+``PgSetting`` owns lazy client and connection-pool construction. Instances are
+created by ``load_settings_bundle``; this module does not load AWS settings or
+publish process-global database clients.
 """
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# from langchain_postgres.vectorstores import PGVector
 from supabase import (
     create_client,
     Client,
@@ -29,7 +19,6 @@ from supabase import (
 from loguru import logger
 from psycopg_pool import AsyncConnectionPool
 from typing import Optional
-from restaurant_agent_runtime.utils.aws_setting import agent_env
 from pydantic import Field
 
 # %%
@@ -176,58 +165,4 @@ class PgSetting(BaseSettings):
             )
             return False
 
-    # @property
-    # def vector_store(self):
-    #     return PGVector(
-    #         embeddings=OpenAIEmbeddings(
-    #             model="text-embedding-3-large",
-    #             openai_api_key=llm_settings.openai_api_key,
-    #         ),
-    #         collection_name=self.collection_name,
-    #         connection=self.vec_db_uri,
-    #         use_jsonb=True,
-    #     )
-
     model_config = SettingsConfigDict(extra="allow")
-
-
-# ToDo - remove ordelo client
-pg_settings = PgSetting(**agent_env)
-client = pg_settings.client
-client_ordelo = client
-
-# The database pool is opened lazily on first use via get_pool(). We deliberately
-# do not run a blocking Supabase connection check at import time: it delays server
-# startup and can prevent the web process from binding during a temporary Supabase
-# interruption.
-
-# %%
-# pg_settings_ordelo.check_connection(table_name="thread")
-# %%
-# client_ordelo.rpc("test_reset_order_and_dispatch", {"p_order_number": "ELAS-ZVEO-29"}).execute()
-# # %%
-""" Runstyle: clean up SQL formatting and comment unused code
-
-- Formatted SQL queries for better readability by aligning columns and keywords
-- Commented out unused WhatsApp webhook configuration code
-- Removed trailing whitespace in SQL queries
-# %% Similarity search
-# metadata_filter = {"id": {"$eq": "sweet_lassi"}}
-# results = vector_store.similarity_search_with_score(
-#     query="mutton starters",
-#     k=7,
-#     )
-# for doc, score in results:
-#     print(f"* [SIM={score:3f}] {doc.page_content} [{doc.metadata}]")
-
-
-# %% AS retriever
-vector_store = pg_settings.vector_store
-retriever = vector_store.as_retriever(
-    search_type="mmr", search_kwargs={"k": 30, "fetch_k": 7, "lambda_mult": 0.5}
-)
-retriever.invoke("biryani")
-
-# %% delete collection
-# vector_store.delete_collection()
-"""

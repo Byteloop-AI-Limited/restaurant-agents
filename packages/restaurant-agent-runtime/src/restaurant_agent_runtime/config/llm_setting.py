@@ -1,18 +1,8 @@
-"""
-LLM settings and client configuration for the agent
-  . Defines LLMSettings for OpenAI model and API key management
-  . Provides llm_client property to instantiate ChatOpenAI client
-  . Loads configuration from AWS environment settings
-  . Configures ChatOpenAI with temperature=0, max_retries=2
-  Functions/Classes:
-    . LLMSettings
-    . llm_settings
-"""
+"""LLM settings model constructed at the application composition root."""
 
 # %%
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
-from restaurant_agent_runtime.utils.aws_setting import agent_env
 from langchain_openai import ChatOpenAI
 
 
@@ -52,15 +42,3 @@ class LLMSettings(BaseSettings):
         execution, so they must keep tool-calling to one tool per assistant turn.
         """
         return self._build_client(parallel_tool_calls=False)
-
-
-llm_settings = LLMSettings(**agent_env)
-# %% Usage
-# sheet =g_client.open("elai_takeaway_menu").sheet1
-# sheet.get_all_records()
-
-# %% How to create encoded creds
-# with open(f'{project_setting.get_project_root()}/google_creds.json', "r") as file:
-#     json_content = file.read()
-
-# encoded_credentials = base64.b64encode(json_content.encode()).decode()

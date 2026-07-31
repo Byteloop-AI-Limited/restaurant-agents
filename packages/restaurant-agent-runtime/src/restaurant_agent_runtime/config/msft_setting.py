@@ -1,17 +1,7 @@
-"""
-Microsoft Azure AD authentication settings and token management
-  . Defines MsftSettings for Azure tenant and client credentials
-  . Provides access_token property for Microsoft Graph API authentication
-  . Uses MSAL ConfidentialClientApplication for OAuth2 token acquisition
-  . Loads configuration from AWS environment settings
-  Functions/Classes:
-    . MsftSettings
-    . msft_settings
-"""
+"""Microsoft Azure AD settings model with explicit client construction."""
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from msal import ConfidentialClientApplication
-from restaurant_agent_runtime.utils.aws_setting import agent_env
 from pydantic import Field
 
 
@@ -46,7 +36,3 @@ class MsftSettings(BaseSettings):
         }
 
     model_config = SettingsConfigDict(extra="allow")
-
-
-msft_settings = MsftSettings(**agent_env)
-msft_settings

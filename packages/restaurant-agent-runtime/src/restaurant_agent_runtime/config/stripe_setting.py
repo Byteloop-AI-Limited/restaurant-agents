@@ -1,18 +1,7 @@
-"""
-Stripe payment service settings and URL generation
-  . Defines StripeSetting for Stripe API URLs and authentication
-  . Provides headers property with bearer token authentication
-  . Generates payment intent URLs with thread_id and order_id
-  . Supports reservation payment URL configuration
-  . Loads configuration from AWS environment settings
-  Functions/Classes:
-    . StripeSetting
-    . stripe_settings
-"""
+"""Payment service settings model for one restaurant runtime."""
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
-from restaurant_agent_runtime.utils.aws_setting import agent_env
 
 
 # %%
@@ -42,6 +31,3 @@ class StripeSetting(BaseSettings):
             The constructed payment intent URL
         """
         return f"{self.url}/threads/{thread_id}/orders/{order_id}/payment-url"
-
-
-stripe_settings = StripeSetting(**agent_env)

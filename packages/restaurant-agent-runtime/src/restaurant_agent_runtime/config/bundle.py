@@ -1,31 +1,39 @@
-"""Build one restaurant's settings bundle from the shared AWS secret."""
-
-from copy import copy
+"""Build one RestaurantSettingsBundle at the application composition root."""
 
 from restaurant_agent_runtime.runtime import RestaurantIdentity, RestaurantSettingsBundle
-from restaurant_agent_runtime.utils.aws_setting import agent_env
+from restaurant_agent_runtime.utils.aws_setting import (
+    DEFAULT_AGENT_SECRET_NAME,
+    get_agent_env,
+)
 
-from .google_setting import google_settings
-from .llm_setting import llm_settings
-from .microservices_setting import ms_settings
-from .pg_setting import client_ordelo, pg_settings
-from .project_setting import project_settings
-from .stripe_setting import stripe_settings
+from .google_setting import GoogleSettings
+from .llm_setting import LLMSettings
+from .pg_setting import PgSetting
+from .project_setting import ProjectSetting
+from .stripe_setting import StripeSetting
 from .waba_setting import WabaBusinessSettings
 
 
 def load_settings_bundle(identity: RestaurantIdentity) -> RestaurantSettingsBundle:
-    """Load strict namespaced WABA settings and shared service configuration."""
+    """Load AWS once, validate settings, and build one isolated app bundle."""
 
-    project = copy(project_settings)
-    project.rest_ref = identity.rest_ref
+    env_values = get_agent_env(secret_name=DEFAULT_AGENT_SECRET_NAME)
+    if not env_values:
+        raise RuntimeError(
+            "Unable to load application settings from AWS Secrets Manager. "
+            "Check AWS_SETTINGS_* configuration and IAM permissions."
+        )
+
+    project = ProjectSetting(**env_values).model_copy(
+        update={"rest_ref": identity.rest_ref}
+    )
+    database = PgSetting(**env_values)
     return RestaurantSettingsBundle(
         project=project,
-        database=pg_settings,
-        database_client=client_ordelo,
-        llm=llm_settings,
-        payment=stripe_settings,
-        maps=google_settings,
-        microservices=ms_settings,
-        waba=WabaBusinessSettings.for_namespace(identity.waba_namespace, agent_env),
+        database=database,
+        database_client=database.client,
+        llm=LLMSettings(**env_values),
+        payment=StripeSetting(**env_values),
+        maps=GoogleSettings(**env_values),
+        waba=WabaBusinessSettings.for_namespace(identity.waba_namespace, env_values),
     )
