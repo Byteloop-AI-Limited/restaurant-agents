@@ -19,9 +19,9 @@ are complete. The following work is intentionally deferred.
 
 ## Release prerequisites for prompt and availability work
 
-- [ ] Execute the coordinated Order Cutoff migration, set BNAT's
-  RestaurantMaster schedule to 11:00–23:00 with 15-minute delivery and
-  takeaway cutoffs, and update SFCS's actual RestaurantMaster end times.
+- [ ] Set BNAT's RestaurantMaster schedule to 11:00–23:00 and update SFCS's
+  actual RestaurantMaster end times. New delivery and takeaway orders end 15
+  minutes before each configured service interval automatically.
 - [ ] Add service authentication, persistence/retry, and delivery observability
   for the Ordelo complaint hook before exposing it outside the trusted internal
   boundary.
