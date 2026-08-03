@@ -144,6 +144,13 @@ A persisted line item belonging to a FoodOrder. It has no independent business
 lifecycle outside its order. Its canonical runtime model is independent of any
 database-writer implementation.
 
+### Operational Lookup Cache
+
+The per-RestaurantRuntime, process-local TTL cache for stable operational
+configuration: application URLs, RestaurantMaster, and the database-backed
+Overwatch recipient list. It is not a source of truth and excludes
+transactional customer, order, payment, fulfilment, and Thread data.
+
 ## P
 
 ### Payment Projection
@@ -199,8 +206,8 @@ takeaway prompts. Prompts are application-owned inputs to the shared runtime.
 
 The immutable environment record assembled for exactly one Restaurant
 Application. It contains identity, presentation, settings, and the exact async
-and sync WhatsApp clients. The record is frozen, but referenced clients and
-services are effectful and mutable.
+and sync WhatsApp clients plus its Operational Lookup Cache. The record is
+frozen, but referenced clients and services are effectful and mutable.
 
 ### RestaurantSettingsBundle
 
@@ -230,9 +237,10 @@ venue or invalidate existing order/payment/status flows.
 
 ### Overwatch Recipient
 
-An owner-approved test WhatsApp recipient permitted to exercise the complete
-restaurant-agent flow outside venue hours and per-service new-order cutoffs.
-This is a bounded verification bypass, not a customer entitlement.
+A recipient listed in Ordelo's `ordelo_config.overwatch_list`, permitted to
+exercise the complete restaurant-agent flow outside venue hours and per-service
+new-order cutoffs. It is a bounded verification bypass, not a customer
+entitlement; an unreadable list fails closed.
 
 ### Restaurant Complaint
 

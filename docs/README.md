@@ -41,7 +41,7 @@ guides are secondary views.
 - [Payment system](payment_system.md)
 - [Address and maps](address_maps_service.md)
 - [Webhook endpoints](webhook_endpoints.md)
-- [Service and Restaurant caches](caching_system.md)
+- [Operational lookup cache](caching_system.md)
 - [BNAT customization checklist](bnat-customization-checklist.md)
 
 ## Documentation Rules

@@ -52,8 +52,9 @@ are complete. The following work is intentionally deferred.
   to the database-only graph-config module.
 - [x] Move AWS secret loading out of module import and into the explicit app
   composition boundary. ADR-0011 records the settings lifecycle.
-- [ ] Revisit process-local Restaurant/base-URL and deduplication caches only if
-  multi-instance requirements change the current one-worker contract.
+- [ ] Revisit process-local deduplication only if multi-instance requirements
+  change the current one-worker contract. Operational lookup caching is covered
+  by ADR-0016; a multi-instance reset requires one request per replica.
 - [x] Delete the inconsistent, unused PGVector example/retriever code.
 
 The detailed rationale and source references remain in
@@ -67,6 +68,4 @@ I need to update retian_thread to false after this;
         "order_number": summary.order_number,
     }
 
--- Create these endpoints in this new app
-SELECT * FROM ordelo_post('SFCS_APP_URL', '/restaurant-base-url-cache/reset');
-SELECT * FROM ordelo_post('SFCS_APP_URL', '/restaurant-master-cache/reset');
+-- Cache reset is available at POST /internal/cache/reset; see ADR-0016.

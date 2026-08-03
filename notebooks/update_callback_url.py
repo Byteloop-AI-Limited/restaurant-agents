@@ -5,7 +5,7 @@ from importlib import import_module
 
 from restaurant_agent_runtime.config.bundle import load_settings_bundle
 
-APP = "sfcs"
+APP = "bnat"
 CALLBACK_URL = "https://rest-agent-test.ordelo.app/"
 
 identity_modules = {

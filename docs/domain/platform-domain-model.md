@@ -8,6 +8,7 @@ does not claim ownership of external systems' private models.
 
 - [Runtime records, Enquiry Menu, and graph protocol](../../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/runtime.py)
 - [Application composition](../../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/web/app_factory.py)
+- [Operational lookup cache](../../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/services/operational_lookup_cache.py)
 - [Customer and consent models](../../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/services/ordelo_service/datamodels/customer_master_pymodel.py)
 - [Customer-Restaurant relationship](../../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/services/ordelo_service/datamodels/cust_rest_map_pymodel.py)
 - [Restaurant operational master](../../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/services/ordelo_service/datamodels/restaurant_master_pymodel.py)
@@ -95,7 +96,8 @@ projection may be updated from an event but must not contradict its source.
 | `RestaurantIdentity` | Validated immutable value | Routes one app and selects one WABA namespace |
 | `RestaurantPresentation` | Immutable configuration value | Supplies app-owned branding and bounded interactive menu copy |
 | `RestaurantSettingsBundle` | Environment/dependency record | Groups settings and clients loaded once at app composition |
-| `RestaurantRuntime` | Reader-style environment | Carries the exact app identity, settings, and WhatsApp clients |
+| `RestaurantRuntime` | Reader-style environment | Carries the exact app identity, settings, WhatsApp clients, and operational lookup cache |
+| `OperationalLookupCache` | Process-local runtime capability | Caches only stable operational configuration; never transactional records |
 | `RestaurantPrompts` | Immutable input record | Supplies complete app-owned prompts |
 | `AgentBindings` | Record of functions/types | Supplies native WhatsApp callback composition values |
 | `Thread` | Persisted runtime session | Correlates Restaurant, recipient, graph checkpoint, and lifecycle |
@@ -149,6 +151,9 @@ context. Events report something that has already happened.
 - Complete prompts are app-owned.
 - Settings are loaded once at explicit application composition; configuration
   model imports do not fetch secrets or publish process-global clients.
+- Operational configuration may be cached only through the exact runtime's
+  Operational Lookup Cache; its database source remains authoritative, and
+  failed, missing, stale, or transactional data is never cached.
 - New graph/state semantics use an app-owned GraphAdapter rather than mutation
   of private shared-runtime internals.
 - The standard WhatsApp surface exposes the side-effecting `/paid3100` payment
@@ -163,7 +168,15 @@ file: packages/restaurant-agent-runtime/src/restaurant_agent_runtime/runtime.py
 symbol: RestaurantRuntime
 feature: platform-domain-model
 description: >
-  Immutable environment record carrying one application's identity, presentation, settings, and exact WhatsApp clients.
+  Immutable environment record carrying one application's identity, presentation, settings, exact WhatsApp clients, and operational lookup cache.
+```
+
+```code-ref
+file: packages/restaurant-agent-runtime/src/restaurant_agent_runtime/services/operational_lookup_cache.py
+symbol: OperationalLookupCache
+feature: platform-domain-model
+description: >
+  Runtime-owned TTL cache for non-transactional operational configuration and the database-backed Overwatch allowlist.
 ```
 
 ```code-ref

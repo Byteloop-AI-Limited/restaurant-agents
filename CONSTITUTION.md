@@ -67,7 +67,7 @@ Add these shared interfaces:
 
 - `RestaurantIdentity`: immutable `rest_ref` and `waba_namespace`.
 - `RestaurantSettingsBundle`: shared project, database, LLM, payment, maps, and namespaced WABA settings.
-- `RestaurantRuntime`: identity, settings bundle, and the restaurant's async and sync WhatsApp clients.
+- `RestaurantRuntime`: identity, settings bundle, the restaurant's async and sync WhatsApp clients, and its exact runtime-owned operational lookup cache.
 - `GraphAdapter`: protocol exposing `run_rest_graph_with_custom_msg`, `debug_state`, `debug_state_values`, and `debug_state_by_thread`.
 - `RestaurantPrompts`: immutable typed value containing the complete triage,
   delivery, and takeaway prompt strings supplied by one application.
@@ -111,7 +111,7 @@ The app factory must:
 3. Construct one server-bound WhatsApp client using that namespace's phone ID, verify token, token, and app secret.
 4. Enable `validate_updates=True`.
 5. Construct the restaurant graph adapter with the same client object.
-6. Inject the runtime and adapter into every handler, router, graph context, and WA-sending service.
+6. Construct the operational lookup cache from the exact runtime database client, then inject the runtime and adapter into every handler, router, graph context, and WA-sending service.
 
 Remove module-global `_async_wa_client`, `_sync_wa_client`, `waba_business_settings`, and direct shared imports of `rest_agent.agent_runner`.
 

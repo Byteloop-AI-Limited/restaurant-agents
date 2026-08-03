@@ -17,6 +17,17 @@ def test_bnat_entrypoint_uses_shared_agent_runtime():
     assert "bnat_agent.rest_agent.agent_wa_senders" not in source
 
 
+def test_bnat_prompts_require_eager_purpose_built_tool_use():
+    prompt_dir = Path(__file__).resolve().parents[1] / "src/bnat_agent/rest_agent/prompts"
+
+    assert "**EAGER TOOL USE:**" in (prompt_dir / "triage_agent_prompt.md").read_text()
+    delivery_prompt = (prompt_dir / "delivery_multiagent_prompt.md").read_text()
+    assert "immediately call `confirm_delivery_address`" in delivery_prompt
+    assert "immediately call `capture_delivery_address`" in delivery_prompt
+    assert "immediately call `calculate_min_order_value`" in delivery_prompt
+    assert "**EAGER TOOL USE:**" in (prompt_dir / "takeaway_agent_prompt.md").read_text()
+
+
 def test_bnat_recipe_binds_its_prompts_and_exact_runtime(monkeypatch):
     class FakeRestaurantGraphAdapter:
         def __init__(self, runtime, *, prompts):

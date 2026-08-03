@@ -25,8 +25,18 @@ graph adapter on `app.state`. It conditionally includes these router groups:
 - `/thread-hooks`
 
 The top-level operational endpoints are `GET /healthz`, `GET /identity`,
-`GET /details`, and `GET /internal/activity`. The inactive offline-mode module
-is not mounted, and there is no direct shared Stripe router.
+`GET /details`, `GET /internal/activity`, and `POST /internal/cache/reset`.
+The reset endpoint clears only the current process's runtime-owned operational
+lookup cache; its documented unauthenticated internal convention and scopes are
+defined in [Operational Lookup Cache](caching_system.md). The inactive
+offline-mode module is not mounted, and there is no direct shared Stripe router.
+
+## Operational Cache Reset
+
+`POST /internal/cache/reset` accepts `scope=all` (default),
+`operational_config`, `restaurant_master`, or `overwatch`. Use `app_ref` only
+with `scope=operational_config` to clear one URL entry. For full request and
+response examples, see [Operational Lookup Cache](caching_system.md#calls).
 
 ## WhatsApp Handler Surface
 
@@ -34,14 +44,13 @@ Message handlers are registered on the runtime's exact async WhatsApp client in
 this order:
 
 1. Out-of-hours guard.
-2. Allowed-user/offline redirect rule retained by the applications.
-3. `/reset`, which marks the customer's persistent Threads inactive using the
+2. `/reset`, which marks the customer's persistent Threads inactive using the
    runtime database pool.
-4. Shared-location handling with runtime maps settings.
-5. `/paid3100`, which posts a payment-complete simulation for the sender's
+3. Shared-location handling with runtime maps settings.
+4. `/paid3100`, which posts a payment-complete simulation for the sender's
    latest eligible order using exact runtime dependencies.
-6. `/debug`, which is read-only and ignores callers outside `ALLOWED_USERS`.
-7. Default graph handler.
+5. `/debug`, which is read-only and ignores callers outside the runtime Overwatch allowlist.
+6. Default graph handler.
 
 ADR-0012 restores `/paid3100`; `/test` and `/test-t` remain removed.
 

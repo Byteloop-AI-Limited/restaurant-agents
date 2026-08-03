@@ -30,6 +30,7 @@ decision; add a new ADR that supersedes it.
 | [0013](0013-runtime-rendered-prompts-and-service-order-cutoffs.md) | Accepted | Runtime-rendered prompts and service order cutoffs |
 | [0014](0014-ordelo-owned-complaint-admin-notifications.md) | Accepted | Ordelo-owned complaint admin notifications |
 | [0015](0015-app-owned-enquiry-menus.md) | Accepted | App-owned bounded enquiry menus |
+| [0016](0016-runtime-owned-operational-lookup-cache.md) | Accepted | Runtime-owned operational lookup cache |
 
 ## Creating an ADR
 
