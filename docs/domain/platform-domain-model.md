@@ -6,7 +6,7 @@ does not claim ownership of external systems' private models.
 
 ## Human-Friendly Code Map
 
-- [Runtime records and graph protocol](../../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/runtime.py)
+- [Runtime records, Enquiry Menu, and graph protocol](../../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/runtime.py)
 - [Application composition](../../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/web/app_factory.py)
 - [Customer and consent models](../../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/services/ordelo_service/datamodels/customer_master_pymodel.py)
 - [Customer-Restaurant relationship](../../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/services/ordelo_service/datamodels/cust_rest_map_pymodel.py)
@@ -47,12 +47,12 @@ flowchart LR
 | Context | Owns | Does not own |
 | --- | --- | --- |
 | Restaurant Application | Deployment identity, presentation, WABA selection, app assembly | Another app's configuration or prompts |
-| Restaurant Operations | RestaurantMaster, administrators, address, coordinates, service hours, operational settings | App routing identity or external fulfilment internals |
+| Restaurant Operations | RestaurantMaster, administrators, address, coordinates, venue hours, order cutoffs, operational settings | App routing identity or external fulfilment internals |
 | Customer and Consent | CustomerMaster and per-Restaurant CustRestMap consent | Conversation checkpoints or order state |
 | Conversation Runtime | Thread lifecycle, AgentState, ContextSchema, graph checkpoints | Authoritative customer, order, payment, or fulfilment facts |
 | Agent Orchestration | Standard graph, Named Agents, tools, handoffs, prompts supplied by apps | External-system internals or app-owned incompatible graph behavior |
 | Ordering | FoodOrder and OrderItem consistency boundary | Payment transaction truth or dispatch truth |
-| Service Availability | Parsed WeeklySchedule and open/closed decisions | RestaurantMaster persistence |
+| Service Availability | Parsed WeeklySchedule, venue open/closed and new-order cutoff decisions | RestaurantMaster persistence |
 | Integration Boundary | Validated webhooks, callbacks, routes, projection updates, runtime isolation | Authority over external events |
 | Reservations | Reservation models and hooks present in the package | Standard app assembly; reservation router is not currently included by `create_restaurant_app()` |
 
@@ -93,7 +93,7 @@ projection may be updated from an event but must not contradict its source.
 | Record | Functional interpretation | Role |
 | --- | --- | --- |
 | `RestaurantIdentity` | Validated immutable value | Routes one app and selects one WABA namespace |
-| `RestaurantPresentation` | Immutable configuration value | Supplies app-owned branding |
+| `RestaurantPresentation` | Immutable configuration value | Supplies app-owned branding and bounded interactive menu copy |
 | `RestaurantSettingsBundle` | Environment/dependency record | Groups settings and clients loaded once at app composition |
 | `RestaurantRuntime` | Reader-style environment | Carries the exact app identity, settings, and WhatsApp clients |
 | `RestaurantPrompts` | Immutable input record | Supplies complete app-owned prompts |
@@ -144,6 +144,8 @@ context. Events report something that has already happened.
 - FoodOrder is authoritative over order details; runtime state is not.
 - External payment and fulfilment contexts are authoritative over their state.
 - Marketing consent is scoped to Customer plus Restaurant.
+- RestaurantMaster venue hours govern enquiries; order cutoffs govern only new delivery/takeaway flow entry and menu sends.
+- Complaint administration is owned by Ordelo: restaurant apps submit validated complaints but do not read or message administrators directly.
 - Complete prompts are app-owned.
 - Settings are loaded once at explicit application composition; configuration
   model imports do not fetch secrets or publish process-global clients.

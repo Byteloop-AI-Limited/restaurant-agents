@@ -27,6 +27,9 @@ decision; add a new ADR that supersedes it.
 | [0010](0010-remove-live-whatsapp-simulation-commands.md) | Superseded | Remove live WhatsApp simulation commands from the shared runtime |
 | [0011](0011-explicit-settings-composition-lifecycle.md) | Accepted | Load settings at the application composition root |
 | [0012](0012-restore-paid3100-payment-simulation.md) | Accepted | Restore the `/paid3100` payment simulation |
+| [0013](0013-runtime-rendered-prompts-and-service-order-cutoffs.md) | Accepted | Runtime-rendered prompts and service order cutoffs |
+| [0014](0014-ordelo-owned-complaint-admin-notifications.md) | Accepted | Ordelo-owned complaint admin notifications |
+| [0015](0015-app-owned-enquiry-menus.md) | Accepted | App-owned bounded enquiry menus |
 
 ## Creating an ADR
 

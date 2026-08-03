@@ -18,7 +18,7 @@ Platform-wide terms and authority rules are defined in the
 
 ## Human-Friendly Code Map
 
-- [Runtime interfaces and GraphAdapter protocol](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/runtime.py)
+- [Runtime interfaces, Enquiry Menu, and GraphAdapter protocol](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/runtime.py)
 - [FastAPI, runtime, and WhatsApp-client assembly](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/web/app_factory.py)
 - [Standard graph adapter and runner](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agent_runner.py)
 - [Fixed three-node graph](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agents/multi_agent.py)
@@ -37,7 +37,7 @@ or thin framework adapters rather than an inheritance hierarchy.
 | Python construct | Functional interpretation | Constructed at | Consumed by |
 | --- | --- | --- | --- |
 | `RestaurantIdentity` | Validated immutable value | App `identity.py` | App factory, routes, settings loader |
-| `RestaurantPresentation` | Immutable configuration value | App `identity.py` | App factory, runtime, customer-facing services |
+| `RestaurantPresentation` | Immutable configuration value | App `identity.py` | App factory, runtime, customer-facing services and enquiry menus |
 | `RestaurantSettingsBundle` | Environment/dependency record | Settings loader | `RestaurantRuntime` and shared services |
 | `RestaurantRuntime` | Reader-style environment | `create_restaurant_app()` | Handlers, routers, adapter, graph context |
 | `RestaurantPrompts` | Immutable input record | App `agent_recipe.py` | `RestaurantGraphAdapter` |
@@ -69,6 +69,7 @@ app identity.py + app agent_recipe.py
 | Concern | Owner | Extension point |
 | --- | --- | --- |
 | Identity, presentation, WABA namespace | Application | `identity.py` |
+| Enquiry menu labels and callback intent | Application | `RestaurantPresentation.enquiry_menu` |
 | Complete triage, delivery, and takeaway prompts | Application | `rest_agent/prompts/*.md` |
 | Prompt and adapter composition | Application | `rest_agent/agent_recipe.py` |
 | Standard graph, state, routing, middleware, and tools | Shared runtime | No app-local copy |
@@ -106,7 +107,7 @@ existing `GraphAdapterFactory` callable.
    malformed persisted tool-call tails, and creates `ContextSchema`.
 8. `ContextSchema` receives the same async WhatsApp client held by the
    `RestaurantRuntime`, plus the database pool, recipient, restaurant identity,
-   presentation, project and payment settings, and Ordelo client. Tools
+   presentation (including its Enquiry Menu), project and payment settings, and Ordelo client. Tools
    therefore use the exact application runtime rather than module-global
    settings or clients.
 9. Standard transfer tools update `active_agent` with parent-graph
@@ -121,10 +122,12 @@ existing `GraphAdapterFactory` callable.
 
 1. `send_welcome_message`
 2. `ask_user_to_select_service`
-3. `capture_marketing_consent`
-4. `terminate_conversation`
-5. `transfer_to_delivery`
-6. `transfer_to_takeaway`
+3. `ask_user_to_select_enquiry`
+4. `capture_marketing_consent`
+5. `submit_restaurant_complaint`
+6. `terminate_conversation`
+7. `transfer_to_delivery`
+8. `transfer_to_takeaway`
 
 ### `delivery_agent`
 
@@ -152,13 +155,19 @@ existing `GraphAdapterFactory` callable.
 Shared-runtime contract tests own these node names, routes, and ordered tool
 lists. App tests own prompt presence and exact runtime/client composition.
 
+Owner-approved Overwatch recipients bypass venue-hours and new-order-cutoff
+guards across service selection, transfers, and menu sends, so an end-to-end
+test can run at any time. This bypass is restricted to the shared allow-list.
+
 ## Customization Contract
 
 ### Change only wording or policy
 
 Edit the owning app's complete prompt file. Prompts are not assembled from
-shared fragments. Because `agent_recipe.py` reads them during module import, the
-application process must restart to load changes.
+shared fragments. The shared runtime renders only explicit template variables
+for current RestaurantMaster and RestaurantPresentation facts at model-call
+time. Because `agent_recipe.py` reads them during module import, the application
+process must restart to load wording changes.
 
 ### Add a tool to an existing node
 
@@ -236,6 +245,14 @@ symbol: RestaurantPresentation
 feature: shared-multi-agent-orchestration
 description: >
   Immutable app-owned customer-facing branding supplied to the shared runtime.
+```
+
+```code-ref
+file: packages/restaurant-agent-runtime/src/restaurant_agent_runtime/runtime.py
+symbol: EnquiryMenu
+feature: shared-multi-agent-orchestration
+description: >
+ App-owned bounded WhatsApp enquiry prompt and callback options carried through RestaurantPresentation.
 ```
 
 ```code-ref

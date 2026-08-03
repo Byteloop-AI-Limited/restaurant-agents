@@ -17,12 +17,14 @@ are complete. The following work is intentionally deferred.
   applications and record the results. Do not make live WhatsApp, Meta,
   payment, order, rider, or database calls as part of the offline test gate.
 
-## Non-blocking application cleanup
+## Release prerequisites for prompt and availability work
 
-- [ ] Correct BNAT-owned prompt identity and wording after the
-  behavior-preserving release. The copied SFCS wording remains in BNAT's triage
-  and delivery prompts under
-  `apps/bnat/src/bnat_agent/rest_agent/prompts/`.
+- [ ] Execute the coordinated Order Cutoff migration, set BNAT's
+  RestaurantMaster schedule to 11:00–23:00 with 15-minute delivery and
+  takeaway cutoffs, and update SFCS's actual RestaurantMaster end times.
+- [ ] Add service authentication, persistence/retry, and delivery observability
+  for the Ordelo complaint hook before exposing it outside the trusted internal
+  boundary.
 
 ## Non-blocking shared-runtime cleanup
 
@@ -57,10 +59,14 @@ are complete. The following work is intentionally deferred.
 The detailed rationale and source references remain in
 `docs/architecture/shared-agent-runtime-decisions.md`.
 
-
+<!-- Lohith's list -->
 /order-event-hooks.py/takeaway_pickup_time_updated
 I need to update retian_thread to false after this;
     first_state_update_dict = {
         "active_agent": "takeaway_agent",
         "order_number": summary.order_number,
     }
+
+-- Create these endpoints in this new app
+SELECT * FROM ordelo_post('SFCS_APP_URL', '/restaurant-base-url-cache/reset');
+SELECT * FROM ordelo_post('SFCS_APP_URL', '/restaurant-master-cache/reset');
