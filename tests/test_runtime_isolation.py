@@ -134,6 +134,10 @@ def test_two_apps_keep_exact_clients_and_identities_isolated():
     assert sfcs["adapter"].runtime.async_wa_client is sfcs["async_client"]
     assert bnat["adapter"].runtime.async_wa_client is bnat["async_client"]
     assert sfcs["async_client"] is not bnat["async_client"]
+    assert (
+        sfcs["adapter"].runtime.operational_lookups
+        is not bnat["adapter"].runtime.operational_lookups
+    )
 
     with TestClient(sfcs_app) as sfcs_client, TestClient(bnat_app) as bnat_client:
         assert sfcs_client.get("/identity").json() == {
@@ -155,8 +159,8 @@ def test_details_exposes_selected_runtime_identity_without_raw_secrets(
 ):
     monkeypatch.setattr(
         "restaurant_agent_runtime.waba_callback._restaurant_master_details",
-        lambda selected_rest_ref, database_client: {
-            "admins": [f"{selected_rest_ref}-admin"],
+        lambda runtime: {
+            "admins": [f"{runtime.identity.rest_ref}-admin"],
             "service_hours": {"monday": [["10:00", "22:00"]]},
         },
     )
@@ -184,6 +188,28 @@ def test_details_exposes_selected_runtime_identity_without_raw_secrets(
     }
     assert f"{namespace}-token-secret" not in response.text
     assert f"{namespace}-app-secret" not in response.text
+
+
+def test_cache_reset_is_runtime_local_and_validates_scope():
+    app, created = _build_test_app(RestaurantIdentity("SFCS", "sfcs"))
+    cache = created["adapter"].runtime.operational_lookups
+    cache._app_urls["ORDELO"] = object()
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/internal/cache/reset?scope=operational_config&app_ref=ORDELO"
+        )
+        invalid_scope = client.post(
+            "/internal/cache/reset?scope=overwatch&app_ref=ORDELO"
+        )
+        unknown_app = client.post(
+            "/internal/cache/reset?scope=operational_config&app_ref=OTHER"
+        )
+
+    assert response.status_code == 200
+    assert response.json()["removed_entries"]["operational_config"] == 1
+    assert invalid_scope.status_code == 422
+    assert unknown_app.status_code == 404
 
 
 def test_cross_restaurant_thread_route_is_404_without_graph_side_effects():

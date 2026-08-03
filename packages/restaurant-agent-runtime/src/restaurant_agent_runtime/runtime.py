@@ -4,6 +4,10 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
+from restaurant_agent_runtime.services.operational_lookup_cache import (
+    OperationalLookupCache,
+)
+
 
 @dataclass(frozen=True, slots=True)
 class RestaurantIdentity:
@@ -106,6 +110,7 @@ class RestaurantRuntime:
     settings: RestaurantSettingsBundle
     async_wa_client: Any
     sync_wa_client: Any
+    operational_lookups: OperationalLookupCache
 
 
 @runtime_checkable

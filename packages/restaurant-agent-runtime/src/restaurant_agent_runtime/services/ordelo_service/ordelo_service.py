@@ -22,6 +22,9 @@ import httpx
 from pydantic import BaseModel, ConfigDict
 
 from restaurant_agent_runtime.config import logger
+from restaurant_agent_runtime.services.operational_lookup_cache import (
+    OperationalLookupCache,
+)
 from restaurant_agent_runtime.services.ordelo_service.datamodels.customer_master_pymodel import (
     CustomerMaster,
     CreateOrUpdateCustomerRequest,
@@ -39,38 +42,11 @@ class OrdeloService(BaseModel):
 
     rest_ref: str
     database_client: Any
-
-    def get_overwatch_list(self) -> list[str]:
-        """Return normalized recipients from Ordelo's ``overwatch_list`` config."""
-        response = (
-            self.database_client.table("ordelo_config")
-            .select("config_value")
-            .eq("config_key", "overwatch_list")
-            .limit(1)
-            .execute()
-        )
-        data = (
-            response["data"]
-            if isinstance(response, dict) and "data" in response
-            else response.data
-            if hasattr(response, "data")
-            else None
-        )
-        if not data:
-            raise ValueError("No config found for overwatch_list in ordelo_config")
-
-        raw_value = data[0]["config_value"] or ""
-        return [item.strip() for item in raw_value.split(",") if item.strip()]
+    operational_lookups: OperationalLookupCache
 
     async def _get_base_url(self) -> str:
-        """Fetch Ordelo base URL from ordelo_config (cached 5 min)."""
-        from restaurant_agent_runtime.config.params import get_restaurant_base_url_async
-
-        # return "http://localhost:3100"
-        return await get_restaurant_base_url_async(
-            "ORDELO",
-            database_client=self.database_client,
-        )
+        """Fetch Ordelo base URL through the runtime-owned TTL cache."""
+        return self.operational_lookups.get_app_url("ORDELO")
 
     async def create_or_update_customer(
         self, request: CreateOrUpdateCustomerRequest

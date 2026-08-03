@@ -69,9 +69,8 @@ def test_standard_message_registration_includes_only_payment_simulation():
         ),
     )
 
-    assert [handler._callback.__name__ for handler in wa.handlers[:7]] == [
+    assert [handler._callback.__name__ for handler in wa.handlers[:6]] == [
         "bound_closed_message",
-        "send_redirect_to_offline_mode",
         "bound_reset",
         "bound_location",
         "bound_payment_complete",
@@ -138,15 +137,15 @@ async def test_payment_simulation_uses_exact_runtime_database_and_ordelo_hook(
 
     database_client = FakeDatabaseClient()
 
-    async def fake_base_url(rest_ref, *, database_client: object):
-        assert rest_ref == "ORDELO"
-        assert database_client is runtime.settings.database_client
-        return "https://ordelo.example.test"
+    class FakeOperationalLookups:
+        def get_app_url(self, app_ref):
+            assert app_ref == "ORDELO"
+            return "https://ordelo.example.test"
 
     runtime = SimpleNamespace(
         settings=SimpleNamespace(database_client=database_client),
+        operational_lookups=FakeOperationalLookups(),
     )
-    monkeypatch.setattr(handlers, "get_restaurant_base_url_async", fake_base_url)
     monkeypatch.setattr(handlers.httpx, "AsyncClient", FakeHttpClient)
 
     await handlers.simulate_payment_complete(

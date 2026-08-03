@@ -4,7 +4,19 @@ import httpx
 import pytest
 
 from restaurant_agent_runtime.services import order_service
-from tests._stubs.config_stub import FakeSupabaseClient
+
+
+class FakeOperationalLookups:
+    def __init__(self, url: str | None = "https://ordelo.test"):
+        self.url = url
+        self.calls = 0
+
+    def get_app_url(self, app_ref: str) -> str:
+        assert app_ref == "ORDELO"
+        self.calls += 1
+        if self.url is None:
+            raise ValueError("ORDELO_APP_URL is not configured")
+        return self.url
 
 
 class FakeResponse:
@@ -47,10 +59,8 @@ def _patch_httpx(monkeypatch, response):
 
 
 @pytest.mark.asyncio
-async def test_get_min_order_value_uses_injected_database(monkeypatch):
-    database_client = FakeSupabaseClient(
-        table_data={"ordelo_config": [{"config_value": "https://ordelo.test"}]}
-    )
+async def test_get_min_order_value_uses_runtime_operational_lookup(monkeypatch):
+    operational_lookups = FakeOperationalLookups()
     capture = _patch_httpx(
         monkeypatch,
         FakeResponse(json_data={"min_order_value": 12.5}),
@@ -60,7 +70,7 @@ async def test_get_min_order_value_uses_injected_database(monkeypatch):
         51.0,
         -0.1,
         "SFCS",
-        database_client=database_client,
+        operational_lookups=operational_lookups,
     )
 
     assert result == 12.5
@@ -78,9 +88,6 @@ async def test_get_min_order_value_uses_injected_database(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_get_min_order_value_returns_none_on_http_error(monkeypatch):
-    database_client = FakeSupabaseClient(
-        table_data={"ordelo_config": [{"config_value": "https://ordelo.test"}]}
-    )
     _patch_httpx(
         monkeypatch,
         FakeResponse(raise_for_status_exc=httpx.HTTPError("boom")),
@@ -90,7 +97,7 @@ async def test_get_min_order_value_returns_none_on_http_error(monkeypatch):
         51.0,
         -0.1,
         "SFCS",
-        database_client=database_client,
+        operational_lookups=FakeOperationalLookups(),
     ) is None
 
 
@@ -100,5 +107,5 @@ async def test_get_min_order_value_returns_none_without_config():
         51.0,
         -0.1,
         "SFCS",
-        database_client=FakeSupabaseClient(),
+        operational_lookups=FakeOperationalLookups(url=None),
     ) is None

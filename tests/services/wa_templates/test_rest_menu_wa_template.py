@@ -12,14 +12,11 @@ from restaurant_agent_runtime.services.wa_templates import rest_menu_wa_template
 async def test_send_restaurant_menu_uses_text_cta_when_logo_is_not_configured(
     monkeypatch,
 ):
-    async def restaurant_base_url(*_args, **_kwargs):
-        return "https://restaurant.example"
-
-    monkeypatch.setattr(
-        rest_menu_wa_template,
-        "get_restaurant_base_url_async",
-        restaurant_base_url,
-    )
+    operational_lookups = type(
+        "OperationalLookups",
+        (),
+        {"get_app_url": lambda self, app_ref: "https://restaurant.example"},
+    )()
     wa_client = AsyncMock()
     menu = RestMenuQueryParams(
         rest_ref="BNAT",
@@ -34,7 +31,7 @@ async def test_send_restaurant_menu_uses_text_cta_when_logo_is_not_configured(
         rest_menu=menu,
         wa_client=wa_client,
         logo_url=None,
-        database_client=object(),
+        operational_lookups=operational_lookups,
     )
 
     wa_client.send_image.assert_not_awaited()

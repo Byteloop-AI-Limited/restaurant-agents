@@ -1,7 +1,7 @@
 """
 Unit tests for OrdeloService HTTP client
     . Stubs httpx.AsyncClient to capture POST URL and JSON payload
-    . Stubs config.params.get_restaurant_base_url_async for base URL
+    . Stubs the runtime-owned operational lookup cache for the Ordelo base URL
     . Verifies happy path, HTTP error returns None, and dispatch URLs
   Functions/Classes:
     . FakeResponse
@@ -12,18 +12,19 @@ Unit tests for OrdeloService HTTP client
     . test_create_or_update_customer_returns_none_on_http_error
     . test_update_address_posts_payload
     . test_update_cust_rest_map_posts_payload
-    . test_get_overwatch_list_parses_comma_separated_config
-    . test_get_overwatch_list_requires_config
     . test_get_or_create_customer_master_new_customer
     . test_get_or_create_customer_master_existing_customer_no_name
     . test_get_or_create_customer_master_existing_customer_with_name
 """
 
 import sys
-from types import ModuleType, SimpleNamespace
+from types import SimpleNamespace
 
 import httpx
 import pytest
+from restaurant_agent_runtime.services.operational_lookup_cache import (
+    OperationalLookupCache,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -33,13 +34,6 @@ def _stub_config(monkeypatch):
     config_stub = build_config_stub()
     monkeypatch.setitem(sys.modules, "config", config_stub)
 
-    params_stub = ModuleType("restaurant_agent_runtime.config.params")
-
-    async def get_restaurant_base_url_async(key, *, database_client):
-        return "https://ordelo.test"
-
-    params_stub.get_restaurant_base_url_async = get_restaurant_base_url_async
-    monkeypatch.setitem(sys.modules, "restaurant_agent_runtime.config.params", params_stub)
     yield config_stub
 
 
@@ -91,69 +85,30 @@ def _patch_httpx(monkeypatch, module, response):
 
 
 def _service(module):
+    class ConfigClient:
+        def table(self, _name):
+            return self
+
+        def select(self, _fields):
+            return self
+
+        def eq(self, _field, _value):
+            return self
+
+        def limit(self, _count):
+            return self
+
+        def execute(self):
+            return SimpleNamespace(data=[{"config_value": "https://ordelo.test"}])
+
     return module.OrdeloService(
         rest_ref="ELAS",
         database_client=SimpleNamespace(),
+        operational_lookups=OperationalLookupCache(
+            rest_ref="ELAS",
+            database_client=ConfigClient(),
+        ),
     )
-
-
-class FakeConfigQuery:
-    def __init__(self, response):
-        self.response = response
-        self.calls = []
-
-    def select(self, fields):
-        self.calls.append(("select", fields))
-        return self
-
-    def eq(self, key, value):
-        self.calls.append(("eq", key, value))
-        return self
-
-    def limit(self, count):
-        self.calls.append(("limit", count))
-        return self
-
-    def execute(self):
-        self.calls.append(("execute",))
-        return self.response
-
-
-class FakeConfigClient:
-    def __init__(self, response):
-        self.query = FakeConfigQuery(response)
-
-    def table(self, name):
-        assert name == "ordelo_config"
-        return self.query
-
-
-def test_get_overwatch_list_parses_comma_separated_config(ordelo_module):
-    database_client = FakeConfigClient(
-        {"data": [{"config_value": " 447000000001, ,+447000000002 ,"}]}
-    )
-    svc = ordelo_module.OrdeloService(
-        rest_ref="ELAS", database_client=database_client
-    )
-
-    assert svc.get_overwatch_list() == ["447000000001", "+447000000002"]
-    assert database_client.query.calls == [
-        ("select", "config_value"),
-        ("eq", "config_key", "overwatch_list"),
-        ("limit", 1),
-        ("execute",),
-    ]
-
-
-def test_get_overwatch_list_requires_config(ordelo_module):
-    svc = ordelo_module.OrdeloService(
-        rest_ref="ELAS", database_client=FakeConfigClient({"data": []})
-    )
-
-    with pytest.raises(
-        ValueError, match="No config found for overwatch_list in ordelo_config"
-    ):
-        svc.get_overwatch_list()
 
 
 @pytest.mark.asyncio

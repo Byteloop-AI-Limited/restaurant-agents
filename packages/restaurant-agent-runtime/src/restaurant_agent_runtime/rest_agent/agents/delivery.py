@@ -312,7 +312,7 @@ async def calculate_min_order_value(
             rest_ref=rest_ref,
             cust_lat=lat,
             cust_lon=lon,
-            database_client=ctx.client_ordelo,
+            operational_lookups=ctx.operational_lookups,
         )
     else:
         _ = uuid.uuid4().hex
@@ -320,7 +320,7 @@ async def calculate_min_order_value(
             rest_ref=rest_ref,
             cust_lat=lat,
             cust_lon=lon,
-            database_client=ctx.client_ordelo,
+            operational_lookups=ctx.operational_lookups,
         )
 
     return_msg = f"Minimum order value is £{min_order_value}."
@@ -624,7 +624,7 @@ Please try again later.
         )
 
     async with httpx.AsyncClient() as client:
-        orderlo_url = ctx.project_settings.get_ordelo_url(ctx.client_ordelo)
+        orderlo_url = ctx.operational_lookups.get_app_url("ORDELO")
         logger.info(f"Orderlo URL: {orderlo_url}")
         response = await client.get(
             f"{orderlo_url}/delivery-hooks/check-rider-allocation-status/{order_number}",

@@ -19,7 +19,6 @@ from pywa.types.templates import CarouselCard
 # from pywa.types.templates import CarouselTemplate
 # waba_phone_setting, waba_business_setting
 
-from restaurant_agent_runtime.config.params import get_restaurant_base_url_async
 from restaurant_agent_runtime.services.wa_templates.rest_menu_query_params import RestMenuQueryParams
 
 
@@ -175,7 +174,7 @@ async def send_restaurant_menu_non_carousel(
     rest_menu: RestMenuQueryParams,
     wa_client,
     logo_url: str | None,
-    database_client,
+    operational_lookups,
 ):
     """
     Send a non-carousel restaurant menu CTA.
@@ -192,10 +191,7 @@ async def send_restaurant_menu_non_carousel(
     rest_ref = rest_menu.rest_ref
     rest_menu_query_params = rest_menu_params.to_query_params()
 
-    restaurant_base_url = await get_restaurant_base_url_async(
-        "RESTAURANT_MENU",
-        database_client=database_client,
-    )
+    restaurant_base_url = operational_lookups.get_app_url("RESTAURANT_MENU")
     restaurant_url = (
         f"{restaurant_base_url}/restaurant/{rest_ref.lower()}?{rest_menu_query_params}"
     )

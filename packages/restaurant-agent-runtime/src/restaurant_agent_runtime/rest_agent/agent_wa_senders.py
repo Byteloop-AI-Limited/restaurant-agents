@@ -8,9 +8,7 @@ from pywa.types import Button, ButtonUrl
 from pywa_async import WhatsApp
 
 from restaurant_agent_runtime.runtime import EnquiryMenu, RestaurantRuntime
-from restaurant_agent_runtime.config.params import get_restaurant_master_cached
 from restaurant_agent_runtime.services.tz_utils import UK_TZ
-from restaurant_agent_runtime.watomation.overwatch import is_overwatch_recipient
 
 class CallbackButtonData(BaseModel):
     model_config = {"frozen": True, "extra": "allow"}
@@ -60,10 +58,7 @@ async def select_service_wa_send(
     selection_text = "How can I help you today?"
 
     if runtime is not None:
-        restaurant_master = restaurant_master or get_restaurant_master_cached(
-            runtime.identity.rest_ref,
-            database_client=runtime.settings.database_client,
-        )
+        restaurant_master = restaurant_master or runtime.operational_lookups.get_restaurant_master()
         delivery_button_label = runtime.presentation.delivery_button_label
         takeaway_button_label = runtime.presentation.takeaway_button_label
 
@@ -89,13 +84,13 @@ async def select_service_wa_send(
     now = datetime.now(UK_TZ)
     if (
         restaurant_master is None
-        or is_overwatch_recipient(recipient)
+        or (runtime is not None and runtime.operational_lookups.is_overwatch_recipient(recipient))
         or restaurant_master.accepts_new_order("delivery", now)
     ):
         buttons.append(Button(title=delivery_button_label, callback_data=delivery.model_dump_json()))
     if (
         restaurant_master is None
-        or is_overwatch_recipient(recipient)
+        or (runtime is not None and runtime.operational_lookups.is_overwatch_recipient(recipient))
         or restaurant_master.accepts_new_order("takeaway", now)
     ):
         buttons.append(Button(title=takeaway_button_label, callback_data=takeaway.model_dump_json()))
@@ -236,7 +231,7 @@ async def send_restaurant_menu(
     rest_ref: str,
     wa_client: WhatsApp,
     logo_url: str,
-    database_client,
+    operational_lookups,
     order_type: Literal["delivery", "takeaway"] = "delivery",
     distance: float = 0.5,
 ) -> ValueError | None:
@@ -257,7 +252,7 @@ async def send_restaurant_menu(
             rest_menu=rest_menu_query_params,
             wa_client=wa_client,
             logo_url=logo_url,
-            database_client=database_client,
+            operational_lookups=operational_lookups,
         )
     except ValueError as err:
         return err

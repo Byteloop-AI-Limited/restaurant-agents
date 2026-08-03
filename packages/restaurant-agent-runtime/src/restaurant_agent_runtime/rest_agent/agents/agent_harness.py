@@ -51,8 +51,10 @@ from loguru import logger
 from restaurant_agent_runtime.services.ordelo_service.datamodels.restaurant_master_pymodel import (
     RestaurantMaster,
 )
+from restaurant_agent_runtime.services.operational_lookup_cache import (
+    OperationalLookupCache,
+)
 from restaurant_agent_runtime.services.tz_utils import UK_TZ
-from restaurant_agent_runtime.watomation.overwatch import is_overwatch_recipient
 from restaurant_agent_runtime.runtime import EnquiryMenu
 
 
@@ -127,6 +129,7 @@ class ContextSchema(BaseModel):
     project_settings: Any
     payment_settings: Any
     client_ordelo: Client
+    operational_lookups: OperationalLookupCache
     thread_handler: Any | None = None
 
     def model_post_init(self, __context: Any) -> None:
@@ -169,7 +172,9 @@ async def _send_menu_tool(
     from restaurant_agent_runtime.rest_agent.agent_wa_senders import send_restaurant_menu
 
     ctx = runtime.context
-    if not is_overwatch_recipient(ctx.recipient) and not ctx.restaurant_master.accepts_new_order(
+    if not ctx.operational_lookups.is_overwatch_recipient(
+        ctx.recipient
+    ) and not ctx.restaurant_master.accepts_new_order(
         order_type, datetime.now(UK_TZ)
     ):
         await ctx.wa_client.send_message(
@@ -201,7 +206,7 @@ async def _send_menu_tool(
         order_type=order_type,
         wa_client=ctx.wa_client,
         logo_url=ctx.restaurant_logo_url,
-        database_client=ctx.client_ordelo,
+        operational_lookups=ctx.operational_lookups,
     )
     if isinstance(menu_err, ValueError):
         await ctx.wa_client.send_message(
@@ -285,7 +290,9 @@ def transfer_to_delivery(
     """
     if (guard := _run_transfer_guards(runtime.state, runtime.tool_call_id)) is not None:
         return guard
-    if not is_overwatch_recipient(runtime.context.recipient) and not runtime.context.restaurant_master.accepts_new_order(
+    if not runtime.context.operational_lookups.is_overwatch_recipient(
+        runtime.context.recipient
+    ) and not runtime.context.restaurant_master.accepts_new_order(
         "delivery", datetime.now(UK_TZ)
     ):
         return Command(
@@ -363,7 +370,9 @@ def transfer_to_takeaway(
     """
     if (guard := _run_transfer_guards(state, runtime.tool_call_id)) is not None:
         return guard
-    if not is_overwatch_recipient(runtime.context.recipient) and not runtime.context.restaurant_master.accepts_new_order(
+    if not runtime.context.operational_lookups.is_overwatch_recipient(
+        runtime.context.recipient
+    ) and not runtime.context.restaurant_master.accepts_new_order(
         "takeaway", datetime.now(UK_TZ)
     ):
         return Command(

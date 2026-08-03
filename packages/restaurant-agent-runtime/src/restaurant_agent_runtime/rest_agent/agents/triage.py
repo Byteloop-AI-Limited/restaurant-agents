@@ -253,6 +253,7 @@ async def submit_restaurant_complaint(
     result = await OrdeloService(
         rest_ref=ctx.rest_ref,
         database_client=ctx.client_ordelo,
+        operational_lookups=ctx.operational_lookups,
     ).submit_restaurant_complaint(
         RestaurantComplaintRequest(
             rest_ref=ctx.rest_ref,
