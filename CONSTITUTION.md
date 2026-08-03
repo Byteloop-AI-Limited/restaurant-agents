@@ -94,6 +94,16 @@ supported execution context and must not capture module-global clients or
 services. Complete prompts remain application-owned. Unsupported graph or state
 variation uses an app-owned `GraphAdapter` through the existing shared protocol.
 
+Complete app-owned prompts may contain named LangChain template variables. The
+shared runtime renders only current RestaurantMaster operational values and
+RestaurantPresentation contact/branding values at model-call time; it must not
+copy restaurant facts into shared defaults. RestaurantMaster venue hours remain
+the open/closed authority. Per-service order cutoffs are separate operational
+fields and block only new-order agent flows, stale service selections, handoffs,
+and new menu-link sends; existing order, payment, and status support remains
+available. Restaurant-admin complaint notifications cross the Ordelo boundary;
+a restaurant WhatsApp runtime must not contact `admins` directly.
+
 The app factory must:
 
 1. Load the requested namespace without fallback.
