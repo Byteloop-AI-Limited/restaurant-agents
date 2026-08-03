@@ -180,8 +180,9 @@ namespace the running process may serve.
 ### RestaurantMaster
 
 The authoritative persisted mutable operational Restaurant record. It owns
-address, coordinates, administrators, venue service hours, per-service new-order
-cutoffs, and operational settings.
+address, coordinates, administrators, venue service hours, and operational
+settings. New-order cutoffs are derived from its service-hour schedule, not
+persisted separately.
 
 ### RestaurantPresentation
 

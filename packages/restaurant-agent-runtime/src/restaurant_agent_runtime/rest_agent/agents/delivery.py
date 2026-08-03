@@ -456,9 +456,7 @@ async def answer_general_query(
         )
         if part
     )
-    opening_hours = master.service_hours.format_week(
-        cutoff_minutes=master.delivery_order_cutoff_minutes
-    )
+    opening_hours = master.service_hours.format_new_order_week()
 
     is_payment_successful = state.get("is_payment_successful", False) is True
 

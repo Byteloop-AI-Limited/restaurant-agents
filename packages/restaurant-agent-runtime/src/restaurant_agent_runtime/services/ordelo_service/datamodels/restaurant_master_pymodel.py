@@ -41,8 +41,6 @@ class RestaurantMaster(BaseModel):
     dt: datetime.date  # date, NOT NULL
     dtts: datetime.datetime  # timestamp with time zone, NOT NULL
     rest_stale_active_threads_minutes: int = 10  # integer, NOT NULL, DEFAULT 10
-    delivery_order_cutoff_minutes: int = 0
-    takeaway_order_cutoff_minutes: int = 0
     service_hours_json: dict[str, Any] = Field(default_factory=dict)  # jsonb, NOT NULL
     service_hours: WeeklySchedule
 
@@ -54,26 +52,10 @@ class RestaurantMaster(BaseModel):
             values["service_hours"] = WeeklySchedule.from_dict(raw, tz=UK_TZ)
         return values
 
-    @model_validator(mode="after")
-    def _validate_order_cutoffs(self) -> "RestaurantMaster":
-        for field_name in (
-            "delivery_order_cutoff_minutes",
-            "takeaway_order_cutoff_minutes",
-        ):
-            if getattr(self, field_name) < 0:
-                raise ValueError(f"{field_name} must not be negative")
-        return self
-
     def accepts_new_order(self, order_type: str, at: datetime.datetime) -> bool:
-        if order_type == "delivery":
-            cutoff_minutes = self.delivery_order_cutoff_minutes
-        elif order_type == "takeaway":
-            cutoff_minutes = self.takeaway_order_cutoff_minutes
-        else:
+        if order_type not in {"delivery", "takeaway"}:
             raise ValueError(f"Unknown order type: {order_type}")
-        return self.service_hours.accepts_new_orders(
-            at, cutoff_minutes=cutoff_minutes
-        )
+        return self.service_hours.accepts_new_orders(at)
 
     @classmethod
     def from_rest_ref(cls, rest_ref: str, *, database_client):

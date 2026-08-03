@@ -47,7 +47,7 @@ flowchart LR
 | Context | Owns | Does not own |
 | --- | --- | --- |
 | Restaurant Application | Deployment identity, presentation, WABA selection, app assembly | Another app's configuration or prompts |
-| Restaurant Operations | RestaurantMaster, administrators, address, coordinates, venue hours, order cutoffs, operational settings | App routing identity or external fulfilment internals |
+| Restaurant Operations | RestaurantMaster, administrators, address, coordinates, venue hours, operational settings | App routing identity or external fulfilment internals |
 | Customer and Consent | CustomerMaster and per-Restaurant CustRestMap consent | Conversation checkpoints or order state |
 | Conversation Runtime | Thread lifecycle, AgentState, ContextSchema, graph checkpoints | Authoritative customer, order, payment, or fulfilment facts |
 | Agent Orchestration | Standard graph, Named Agents, tools, handoffs, prompts supplied by apps | External-system internals or app-owned incompatible graph behavior |
@@ -144,7 +144,7 @@ context. Events report something that has already happened.
 - FoodOrder is authoritative over order details; runtime state is not.
 - External payment and fulfilment contexts are authoritative over their state.
 - Marketing consent is scoped to Customer plus Restaurant.
-- RestaurantMaster venue hours govern enquiries; order cutoffs govern only new delivery/takeaway flow entry and menu sends.
+- RestaurantMaster venue hours govern enquiries; new delivery/takeaway flow entry and menu sends close 15 minutes before each service interval ends.
 - Complaint administration is owned by Ordelo: restaurant apps submit validated complaints but do not read or message administrators directly.
 - Complete prompts are app-owned.
 - Settings are loaded once at explicit application composition; configuration

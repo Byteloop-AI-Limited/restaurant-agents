@@ -16,6 +16,9 @@ from .parsing import parse_week
 from .types import Interval, Weekday
 
 
+NEW_ORDER_CUTOFF_MINUTES = 15
+
+
 class WeeklySchedule:
     __slots__ = ("_intervals", "tz")
 
@@ -97,6 +100,52 @@ class WeeklySchedule:
 
         weekday_name = local_nxt.strftime("%A")
         return f"We are currently closed. We open {weekday_name} at {time_str}."
+
+    def accepts_new_orders(self, at: datetime) -> bool:
+        """Return whether the current service interval still accepts a new order.
+
+        New delivery and takeaway orders close 15 minutes before the end of each
+        active service interval. Venue opening remains independent from this
+        new-order cut-off, including for intervals that continue past midnight.
+        """
+        interval = self.current_interval(at)
+        if interval is None:
+            return False
+
+        local = self._to_local(at)
+        now_min = local.hour * 60 + local.minute
+        today = Weekday(local.weekday())
+        if interval not in self._intervals[today] and interval.crosses_midnight:
+            now_min += 24 * 60
+        return now_min < interval.close_min - NEW_ORDER_CUTOFF_MINUTES
+
+    def format_week(self) -> str:
+        """Return a compact, customer-readable weekly venue schedule."""
+        return self._format_week(cutoff_minutes=0)
+
+    def format_new_order_week(self) -> str:
+        """Return new-order hours derived from the venue schedule.
+
+        Each service interval ends 15 minutes before the venue closes. This is
+        intentionally derived from ``service_hours_json`` rather than stored as
+        a separate RestaurantMaster setting.
+        """
+        return self._format_week(cutoff_minutes=NEW_ORDER_CUTOFF_MINUTES)
+
+    def _format_week(self, *, cutoff_minutes: int) -> str:
+        rendered: list[str] = []
+        for day in Weekday:
+            intervals = self._intervals[day]
+            if not intervals:
+                value = "closed"
+            else:
+                value = ", ".join(
+                    f"{format_minutes(iv.open_min)}–{format_minutes(iv.close_min - cutoff_minutes)}"
+                    for iv in intervals
+                    if iv.close_min - cutoff_minutes > iv.open_min
+                ) or "closed"
+            rendered.append(f"{day.key.title()}: {value}")
+        return "; ".join(rendered)
 
     def _to_local(self, at: datetime) -> datetime:
         if at.tzinfo is None:

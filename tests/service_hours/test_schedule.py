@@ -60,12 +60,19 @@ def test_current_interval_returns_active():
     assert ws.current_interval(_at(2025, 12, 1, 16)) is None
 
 
-def test_accepts_new_orders_respects_cutoff_and_overnight_interval():
+def test_accepts_new_orders_uses_fixed_15_minute_cutoff_and_overnight_interval():
     ws = _ws({"mon": [["12:00", "23:00"]], "fri": [["18:00", "25:00"]]})
-    assert ws.accepts_new_orders(_at(2025, 12, 1, 22, 44), cutoff_minutes=15)
-    assert not ws.accepts_new_orders(_at(2025, 12, 1, 22, 45), cutoff_minutes=15)
-    assert ws.accepts_new_orders(_at(2025, 12, 6, 0, 44), cutoff_minutes=15)
-    assert not ws.accepts_new_orders(_at(2025, 12, 6, 0, 45), cutoff_minutes=15)
+    assert ws.accepts_new_orders(_at(2025, 12, 1, 22, 44))
+    assert not ws.accepts_new_orders(_at(2025, 12, 1, 22, 45))
+    assert ws.accepts_new_orders(_at(2025, 12, 6, 0, 44))
+    assert not ws.accepts_new_orders(_at(2025, 12, 6, 0, 45))
+
+
+def test_format_new_order_week_ends_each_interval_15_minutes_before_close():
+    ws = _ws({"mon": [["12:00", "15:00"], ["18:00", "22:00"]]})
+
+    assert ws.format_week().startswith("Mon: 12 pm–3 pm, 6 pm–10 pm")
+    assert ws.format_new_order_week().startswith("Mon: 12 pm–2:45 pm, 6 pm–9:45 pm")
 
 
 def test_next_open_when_open_returns_at():

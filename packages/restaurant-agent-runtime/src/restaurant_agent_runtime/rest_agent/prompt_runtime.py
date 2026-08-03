@@ -30,12 +30,8 @@ def render_prompt_middleware(prompt: str):
             restaurant_address=address,
             restaurant_phone=context.restaurant_contact_phone or "not available",
             venue_hours=master.service_hours.format_week(),
-            delivery_order_hours=master.service_hours.format_week(
-                cutoff_minutes=master.delivery_order_cutoff_minutes
-            ),
-            takeaway_order_hours=master.service_hours.format_week(
-                cutoff_minutes=master.takeaway_order_cutoff_minutes
-            ),
+            delivery_order_hours=master.service_hours.format_new_order_week(),
+            takeaway_order_hours=master.service_hours.format_new_order_week(),
         )
 
     return render
