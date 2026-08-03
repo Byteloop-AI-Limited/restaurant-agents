@@ -46,11 +46,6 @@ from pywa_async import WhatsApp
 from supabase._sync.client import Client
 from typing_extensions import NotRequired, TypedDict
 from loguru import logger
-# from restaurant_agent_runtime.services.ordelo_service.ordelo_service import OrdeloService
-
-# from restaurant_agent_runtime.config import project_settings
-
-# ordelo_service = OrdeloService(rest_ref=project_settings.rest_ref)
 
 
 # %% Define AgentState
@@ -117,6 +112,7 @@ class ContextSchema(BaseModel):
     restaurant_name: str
     restaurant_logo_url: str
     project_settings: Any
+    payment_settings: Any
     client_ordelo: Client
     thread_handler: Any | None = None
 
@@ -173,6 +169,7 @@ async def _send_menu_tool(
         order_type=order_type,
         wa_client=ctx.wa_client,
         logo_url=ctx.restaurant_logo_url,
+        database_client=ctx.client_ordelo,
     )
     if isinstance(menu_err, ValueError):
         await ctx.wa_client.send_message(

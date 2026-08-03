@@ -108,7 +108,7 @@ async def test_enriched_details_returns_sanitized_partial_result(monkeypatch):
         async def get_business_phone_number(self, **kwargs):
             raise RuntimeError("meta-sensitive-error")
 
-    def unavailable_restaurant(_):
+    def unavailable_restaurant(_, database_client):
         raise RuntimeError("database-sensitive-error")
 
     monkeypatch.setattr(
@@ -117,7 +117,10 @@ async def test_enriched_details_returns_sanitized_partial_result(monkeypatch):
     )
     runtime = SimpleNamespace(
         identity=RestaurantIdentity("BNAT", "bnat"),
-        settings=SimpleNamespace(waba=settings),
+        settings=SimpleNamespace(
+            waba=settings,
+            database_client=SimpleNamespace(),
+        ),
         async_wa_client=UnavailableWhatsApp(),
     )
 

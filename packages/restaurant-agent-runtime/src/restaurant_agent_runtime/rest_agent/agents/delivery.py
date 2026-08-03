@@ -308,12 +308,18 @@ async def calculate_min_order_value(
     rest_ref = ctx.rest_ref
     if order_number is not None:
         min_order_value = await get_min_order_value(
-            rest_ref=rest_ref, cust_lat=lat, cust_lon=lon
+            rest_ref=rest_ref,
+            cust_lat=lat,
+            cust_lon=lon,
+            database_client=ctx.client_ordelo,
         )
     else:
         _ = uuid.uuid4().hex
         min_order_value = await get_min_order_value(
-            rest_ref=rest_ref, cust_lat=lat, cust_lon=lon
+            rest_ref=rest_ref,
+            cust_lat=lat,
+            cust_lon=lon,
+            database_client=ctx.client_ordelo,
         )
 
     return_msg = f"Minimum order value is £{min_order_value}."
@@ -585,7 +591,11 @@ Please try again later.
         logger.info(
             f"Attempting to cancel payment for order_id={order_id}, thread_id={thread_id}"
         )
-        result = await cancel_payment(order_id=order_id, thread_id=str(thread_id))
+        result = await cancel_payment(
+            order_id=order_id,
+            thread_id=str(thread_id),
+            payment_settings=ctx.payment_settings,
+        )
         logger.info(f"Payment cancellation result for order_id={order_id}: {result}")
 
         return Command(

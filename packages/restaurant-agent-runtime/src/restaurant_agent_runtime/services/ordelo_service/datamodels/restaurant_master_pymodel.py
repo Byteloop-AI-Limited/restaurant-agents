@@ -2,7 +2,7 @@
 Pydantic model for restaurant_master table
     . Defines fields and types to match the restaurant_master DDL
     . Handles nullability with Optional
-    . Depends on pydantic, datetime, and config.client_ordelo
+    . Receives the selected runtime database client explicitly
     . Models the restaurant_master table structure
     . Provides from_rest_ref to instantiate from DB
     . Provides get_admins to fetch admins column live from DB
@@ -53,11 +53,9 @@ class RestaurantMaster(BaseModel):
         return values
 
     @classmethod
-    def from_rest_ref(cls, rest_ref: str):
-        from restaurant_agent_runtime.config import client_ordelo
-
+    def from_rest_ref(cls, rest_ref: str, *, database_client):
         resp = (
-            client_ordelo.table("restaurant_master")
+            database_client.table("restaurant_master")
             .select("*")
             .eq("rest_ref", rest_ref.upper())
             .execute()
@@ -75,15 +73,13 @@ class RestaurantMaster(BaseModel):
         row = data[0]
         return cls(**row)
 
-    def get_admins(self):
+    def get_admins(self, *, database_client):
         """
         Fetches the current value of the 'admins' column from the DB for this restaurant.
         Returns a list of admin strings, or None if not set.
         """
-        from restaurant_agent_runtime.config import client_ordelo
-
         resp = (
-            client_ordelo.table("restaurant_master")
+            database_client.table("restaurant_master")
             .select("admins")
             .eq("rest_ref", self.rest_ref)
             .execute()
@@ -98,10 +94,3 @@ class RestaurantMaster(BaseModel):
         if not data or len(data) == 0:
             raise ValueError(f"No restaurant found with rest_ref={self.rest_ref}")
         return data[0].get("admins")
-
-
-# %%
-# _rm = RestaurantMaster.from_rest_ref("SFCS")
-# print(_rm.service_hours)
-# from restaurant_agent_runtime.config import client_ordelo
-# client_ordelo.table("restaurant_master").select("*").eq("rest_ref", "WREN").execute()

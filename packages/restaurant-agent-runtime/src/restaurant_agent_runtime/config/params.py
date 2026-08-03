@@ -1,20 +1,4 @@
-"""
-Restaurant master data loading and dictionary filtering utilities
-  . Loads RestaurantMaster data from project settings with caching
-  . Provides filter_dict function for list of dictionaries filtering
-  . Logs restaurant reference and admin information on initialization
-  . Exposes service hour configuration derived from REST_MASTER
-  . Implements in-memory caching for base URLs and RestaurantMaster instances
-  . Cache reset automatically reloads REST_MASTER and updates derived constants
-  Functions/Classes:
-    . REST_MASTER
-    . get_restaurant_base_url_async
-    . reset_restaurant_base_url_cache
-    . reset_restaurant_master_cache
-    . get_restaurant_master_cached
-    . get_restaurant_admins
-    . filter_dict
-"""
+"""Runtime-client-bound Restaurant lookups with process-local TTL caches."""
 
 # %%
 import time
@@ -23,7 +7,6 @@ from loguru import logger
 from restaurant_agent_runtime.services.ordelo_service.datamodels.restaurant_master_pymodel import (
     RestaurantMaster,
 )
-from restaurant_agent_runtime.config import client_ordelo
 
 _CACHE_TTL_SECS = 5 * 60  # 5 minutes
 _BASE_URL_CACHE: dict[str, tuple[str, float]] = {}
@@ -33,6 +16,8 @@ _RESTAURANT_MASTER_CACHE: dict[str, tuple["RestaurantMaster", float]] = {}
 # %% get_restaurant_master_cached
 def get_restaurant_master_cached(
     rest_ref: str,
+    *,
+    database_client,
 ) -> RestaurantMaster:
     """
     Get RestaurantMaster instance with in-memory caching.
@@ -59,13 +44,16 @@ def get_restaurant_master_cached(
             return cached_value
         _RESTAURANT_MASTER_CACHE.pop(cache_key, None)
 
-    restaurant = RestaurantMaster.from_rest_ref(rest_ref_upper)
+    restaurant = RestaurantMaster.from_rest_ref(
+        rest_ref_upper,
+        database_client=database_client,
+    )
     _RESTAURANT_MASTER_CACHE[cache_key] = (restaurant, now + _CACHE_TTL_SECS)
     return restaurant
 
 
 # %% get_restaurant_base_url_async
-async def get_restaurant_base_url_async(rest_ref: str) -> str:
+async def get_restaurant_base_url_async(rest_ref: str, *, database_client) -> str:
     """
     Fetch restaurant base URL from database with in-memory caching.
 
@@ -95,7 +83,7 @@ async def get_restaurant_base_url_async(rest_ref: str) -> str:
 
     config_key = rest_ref_upper + "_APP_URL"
     resp = (
-        client_ordelo.table("ordelo_config")
+        database_client.table("ordelo_config")
         .select("config_value")
         .eq("config_key", config_key)
         .limit(1)
@@ -175,7 +163,10 @@ def reset_restaurant_master_cache(rest_ref: str | None = None) -> int:
 
 # %%
 def get_restaurant_admins(
-    rest_ref: str | None = None, rest_id: int | None = None
+    *,
+    database_client,
+    rest_ref: str | None = None,
+    rest_id: int | None = None,
 ) -> list[str] | None:
     """Get restaurant admins by rest_ref or rest_id.
 
@@ -189,7 +180,7 @@ def get_restaurant_admins(
     if rest_ref is None and rest_id is None:
         raise ValueError("Either rest_ref or rest_id must be provided")
 
-    query = client_ordelo.table("restaurant_master").select("admins")
+    query = database_client.table("restaurant_master").select("admins")
 
     if rest_ref is not None:
         query = query.eq("rest_ref", rest_ref.upper())

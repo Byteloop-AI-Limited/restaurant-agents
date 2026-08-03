@@ -8,7 +8,6 @@ Tests for PgSetting.close_pool
       not run
 """
 
-from types import ModuleType
 from unittest.mock import AsyncMock
 
 from tests._stubs.loader import load_module
@@ -23,19 +22,16 @@ PG_FAKE_SECRET = {
 
 
 def _load_pg_module(monkeypatch):
-    aws_stub = ModuleType("restaurant_agent_runtime.utils.aws_setting")
-    aws_stub.agent_env = dict(PG_FAKE_SECRET)
     return load_module(
         "pg_setting_under_test",
         "restaurant_agent_runtime.config/pg_setting.py",
         monkeypatch,
-        stubs={"restaurant_agent_runtime.utils.aws_setting": aws_stub},
     )
 
 
 async def test_close_pool_closes_open_pool(monkeypatch):
     pg_mod = _load_pg_module(monkeypatch)
-    settings = pg_mod.pg_settings
+    settings = pg_mod.PgSetting(**PG_FAKE_SECRET)
 
     fake_pool = AsyncMock()
     fake_pool.closed = False
@@ -49,7 +45,7 @@ async def test_close_pool_closes_open_pool(monkeypatch):
 
 async def test_close_pool_noop_when_no_pool(monkeypatch):
     pg_mod = _load_pg_module(monkeypatch)
-    settings = pg_mod.pg_settings
+    settings = pg_mod.PgSetting(**PG_FAKE_SECRET)
     settings._async_pool = None
 
     await settings.close_pool()  # must not raise
@@ -59,7 +55,7 @@ async def test_close_pool_noop_when_no_pool(monkeypatch):
 
 async def test_close_pool_skips_already_closed_pool(monkeypatch):
     pg_mod = _load_pg_module(monkeypatch)
-    settings = pg_mod.pg_settings
+    settings = pg_mod.PgSetting(**PG_FAKE_SECRET)
 
     fake_pool = AsyncMock()
     fake_pool.closed = True

@@ -1,205 +1,125 @@
----
 # Feature: Order Management
-The order management subsystem handles the full lifecycle of food orders placed through WhatsApp, from creation through payment and receipt generation. It exists because the system evolved from a legacy psycopg-based path (OrderHandler) to a Supabase-backed path (FoodOrder), and both remain in use. The subsystem covers order ID generation, order item persistence, pricing calculation with fees, Stripe payment intent creation, and WhatsApp receipt formatting for both customers and restaurants.
 
----
+The shared runtime consumes persisted food orders; it does not create catalog
+orders. `FoodOrder` is the canonical order aggregate and `OrderItem` is its
+canonical line-item value, as decided by ADR-0005 and ADR-0009. The external
+ordering/payment path persists the aggregate before calling the runtime's order
+event endpoint.
 
 ## Human-Friendly Code Map
-- [Legacy order DB operations and OrderHandler](./services/order_management/order_db_ops.py)
-- [Supabase-backed FoodOrder model](./services/order_management/food_order_pymodel.py)
-- [WhatsApp receipt generation](./services/order_management/food_order_reciept.py)
-- [Delivery data models](./services/order_management/delivery_pymodels.py)
-- [Takeaway data models](./services/order_management/takeaway_pymodels.py)
-- [Order service helpers (min order, pricing)](./services/order_service.py)
 
-### Detailed Flow Explanation
+- [FoodOrder aggregate](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/services/order_management/food_order_pymodel.py)
+- [OrderItem value](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/services/order_management/order_item_pymodel.py)
+- [WhatsApp receipt formatting](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/services/order_management/food_order_reciept.py)
+- [Delivery records](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/services/order_management/delivery_pymodels.py)
+- [Takeaway records](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/services/order_management/takeaway_pymodels.py)
+- [Minimum-order lookup](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/services/order_service.py)
+- [Payment-complete order event](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/watomation/routers/order_event_hooks.py)
 
-**Order Creation Path 1: Legacy psycopg (OrderHandler)**
+## Active Flow
 
-1. `process_order_into_db` receives a psycopg connection pool, recipient, thread_id, and a pywa `Order` object from the WhatsApp catalog.
-2. `OrderHandler.get_seq_num` calls the `get_next_daily_seq` PostgreSQL function to obtain a daily sequence number.
-3. A `FoodOrderModel` is constructed with the recipient, total amount, thread_id, and seq_id. The `@model_validator` auto-generates an `order_id` by hashing the last 4 digits of the recipient phone number with a salt and the current date, producing a 4-character uppercase code suffixed with the sequence number (e.g. `ABCD-12`).
-4. `OrderHandler.create_food_order` inserts the order row into the `FoodOrder` table via raw SQL.
-5. `OrderHandler.insert_order_items` converts the pywa `Order` products into `OrderItem` models (enriching each with product name from the SKU map) and batch-inserts them into the `OrderItem` table.
-6. `create_order_summary_from_db` re-fetches the order with items via a JOIN query and builds a summary dict suitable for Stripe payment intent creation.
-7. `get_stripe_payment_link` posts the order summary to the Stripe microservice endpoint to obtain a payment URL.
+1. An external ordering/payment context persists a `food_order` record and its
+   `order_item` rows.
+2. The payment-complete integration posts the persisted aggregate to
+   `POST /order-event-hooks/{rest_ref}/payment-complete/{recipient}/{thread_id}`.
+3. The route validates the restaurant prefix and confirms that the recipient
+   and thread in the URL match the `FoodOrder` body before any side effect.
+4. Receipt formatting fetches line items with the exact database client from
+   the selected `RestaurantRuntime`.
+5. The customer receives a delivery or takeaway receipt, and the graph is
+   updated with the payment result, order identifiers, and retained-thread
+   state.
 
-**Order Creation Path 2: Supabase (FoodOrder)**
+There is no shared catalog-order command, order-reference generator, direct
+order insert, automatic pricing mutation, or payment-payload method on
+`FoodOrder`. A future internal writer requires a separate design with explicit
+aggregate invariants and an injected persistence dependency.
 
-1. `FoodOrder.from_order_id` fetches a single row from the Supabase `food_order` table by order_id and hydrates a `FoodOrder` Pydantic model.
-2. On instantiation, if `final_order_value` is None, `update_final_order_value_in_db` is called automatically to compute pricing.
-3. `update_final_order_value_in_db` fetches customer coordinates from `customer_master`, calls the pricing microservice via `get_final_order_value`, and updates the `food_order` row with final_order_value, rest_cost, service_charge, delivery_fee, small_order_fee, and commission_rate.
-4. `gen_payment_intent_payload` assembles the Stripe payment intent payload by fetching order items from the `order_item` table and appending non-zero fee line items (service charge, delivery fee, small order fee).
-5. `gen_capture_payload` produces a capture-mode payload for post-authorization payment capture, including the restaurant payout amount and order notes.
-6. The `payment_uri` property constructs the Stripe payment URL using the thread_id and order_id.
+## Aggregate and Receipt Contracts
 
-**Receipt Generation**
+`FoodOrder` is a pure Pydantic boundary model. It validates the persisted order
+identity, customer/thread correlation, fulfilment action, food total, optional
+fee breakdown, and payment status. Constructing it performs no database or
+network I/O.
 
-1. `build_wa_order_reciept_for_cust` generates a customer-facing WhatsApp receipt with item lines, service charge, delivery fee, small order fee, and total using `final_order_value`.
-2. `build_wa_order_reciept_for_rest` generates a restaurant-facing receipt that omits service charge and delivery fee, showing only food total via `total_price` and small order fee if applicable.
-3. Both functions return a `(header, text)` tuple formatted with WhatsApp markdown (`*bold*`, bullet `*` characters).
+`OrderItem` represents a persisted line item. Restaurant receipt callers may
+provide validated `OrderItem` values directly; otherwise receipt formatting
+loads the rows through an explicit database client.
 
-**Delivery and Takeaway Models**
+- Customer receipts show food items, applicable service/delivery/small-order
+  charges, notes, and `final_order_value` (falling back to `total_price`).
+- Restaurant receipts omit customer service and delivery charges and show the
+  food total. They include the small-order fee when present.
+- Missing line items are a contract error and raise `ValueError`; the runtime
+  does not invent an empty receipt.
 
-1. `DeliveryDetail` captures full delivery routing data: restaurant and customer coordinates, rider assignment, dispatch ID, and generates a Google Maps navigation URL via its `google_maps_url` property.
-2. `DeliverySummary` tracks delivery status with confirmation codes, pickup time, and timestamps for both restaurant and customer sides.
-3. `DeliveryDispatch` models the rider assignment record with payout and distance.
-4. `TakeawaySummaryData` tracks takeaway order status including restaurant confirmation, prep time, and pickup scheduling.
-5. `TakeawayPickupTimePayload` bundles a `TakeawaySummaryData` with `RestaurantMasterData` for the pickup time webhook.
+## Delivery, Takeaway, and Minimum Order
 
-**Order Service Helpers**
+`DeliveryDetail`, `DeliverySummary`, and `DeliveryDispatch` model fulfilment
+data reported through the delivery flow. `TakeawaySummaryData` and
+`TakeawayPickupTimePayload` model preparation and pickup events. These are
+integration records; the external fulfilment context remains authoritative.
 
-1. `get_min_order_value` calls the Ordelo pricing endpoint with customer coordinates and restaurant reference to retrieve the minimum order value for delivery eligibility.
-2. `_resolve_restaurant_coordinates` resolves restaurant lat/lon either from explicit parameters or by looking up the `restaurant_master` table using `rest_ref`.
-3. `get_min_order_value_for_location` combines coordinate resolution with the pricing call to return a human-readable minimum order message.
+`get_min_order_value` calls the configured Ordelo endpoint with customer
+coordinates and the restaurant reference. Its database client is explicit and
+is used only to resolve the restaurant-specific base URL. HTTP or response
+errors return `None` for the agent to handle.
 
-### Code References (Machine-Readable)
-file: services/order_management/order_db_ops.py
-symbol: FoodOrderModel
-feature: Order Management
-description: >
-  Legacy Pydantic model for food orders with auto-generated order IDs via salted hash of recipient phone and date, used with psycopg OrderHandler.
+## Code References (Machine-Readable)
 
-file: services/order_management/order_db_ops.py
-symbol: OrderItem
-feature: Order Management
-description: >
-  Pydantic model for individual order line items with order_id, product_name, quantity, and price.
-
-file: services/order_management/order_db_ops.py
-symbol: OrderHandler
-feature: Order Management
-description: >
-  Legacy psycopg-based handler providing direct SQL operations for order creation, item insertion, sequence numbering, and payment status updates.
-
-file: services/order_management/order_db_ops.py
-symbol: process_order_into_db
-feature: Order Management
-description: >
-  Orchestrates legacy order creation by generating a sequence number, building a FoodOrderModel, and inserting both the order and its items via OrderHandler.
-
-file: services/order_management/order_db_ops.py
-symbol: get_stripe_payment_link
-feature: Order Management
-description: >
-  Fetches order summary from the database and posts it to the Stripe microservice to obtain a payment URL.
-
-file: services/order_management/order_db_ops.py
-symbol: create_order_items_from_order
-feature: Order Management
-description: >
-  Transforms a pywa Order object into a list of OrderItem models, mapping SKU codes to product names via the SKU map.
-
-file: services/order_management/food_order_pymodel.py
+```code-ref
+file: packages/restaurant-agent-runtime/src/restaurant_agent_runtime/services/order_management/food_order_pymodel.py
 symbol: FoodOrder
-feature: Order Management
+feature: order-management
 description: >
-  Supabase-backed Pydantic model for food orders with pricing breakdown fields, auto-pricing on instantiation, and Stripe payment intent/capture payload generation.
+  Pure canonical FoodOrder aggregate used at persistence and integration boundaries.
+```
 
-file: services/order_management/food_order_pymodel.py
-symbol: FoodOrder.from_order_id
-feature: Order Management
+```code-ref
+file: packages/restaurant-agent-runtime/src/restaurant_agent_runtime/services/order_management/order_item_pymodel.py
+symbol: OrderItem
+feature: order-management
 description: >
-  Class method that fetches a food order from the Supabase food_order table and ensures final_order_value is computed before returning.
+  Canonical persisted line-item value independent of any order writer.
+```
 
-file: services/order_management/food_order_pymodel.py
-symbol: FoodOrder.update_final_order_value_in_db
-feature: Order Management
-description: >
-  Calculates final order value including fees by calling the pricing microservice with customer coordinates, then updates the database and instance fields.
-
-file: services/order_management/food_order_pymodel.py
-symbol: FoodOrder.gen_payment_intent_payload
-feature: Order Management
-description: >
-  Assembles a Stripe payment intent payload with order items and non-zero fee line items for payment creation.
-
-file: services/order_management/food_order_pymodel.py
-symbol: FoodOrder.gen_capture_payload
-feature: Order Management
-description: >
-  Generates a capture-mode payment payload including restaurant payout, total amount, and order notes.
-
-file: services/order_management/food_order_reciept.py
+```code-ref
+file: packages/restaurant-agent-runtime/src/restaurant_agent_runtime/services/order_management/food_order_reciept.py
 symbol: build_wa_order_reciept_for_cust
-feature: Order Management
+feature: order-management
 description: >
-  Generates a customer-facing WhatsApp receipt with items, fees, and final total formatted with WhatsApp markdown.
+  Builds the customer WhatsApp receipt using the exact injected database client.
+```
 
-file: services/order_management/food_order_reciept.py
+```code-ref
+file: packages/restaurant-agent-runtime/src/restaurant_agent_runtime/services/order_management/food_order_reciept.py
 symbol: build_wa_order_reciept_for_rest
-feature: Order Management
+feature: order-management
 description: >
-  Generates a restaurant-facing WhatsApp receipt showing only food items and total_price, omitting service and delivery charges.
+  Builds a restaurant receipt from provided OrderItems or an injected database client.
+```
 
-file: services/order_management/food_order_reciept.py
-symbol: _fetch_order_items
-feature: Order Management
+```code-ref
+file: packages/restaurant-agent-runtime/src/restaurant_agent_runtime/watomation/routers/order_event_hooks.py
+symbol: payment_complete
+feature: order-management
 description: >
-  Helper that retrieves order_item rows from Supabase for a given order_id, returning product_name, quantity, and price.
+  Validates and processes the external payment-complete FoodOrder event.
+```
 
-file: services/order_management/delivery_pymodels.py
-symbol: DeliveryDetail
-feature: Order Management
-description: >
-  Pydantic model for delivery routing data with restaurant/customer coordinates, rider assignment, and a google_maps_url property for navigation.
-
-file: services/order_management/delivery_pymodels.py
-symbol: DeliverySummary
-feature: Order Management
-description: >
-  Pydantic model tracking delivery status with confirmation codes, pickup time, and timestamps for both parties.
-
-file: services/order_management/delivery_pymodels.py
-symbol: DeliveryDispatch
-feature: Order Management
-description: >
-  Pydantic model for rider dispatch assignments with payout and distance fields.
-
-file: services/order_management/takeaway_pymodels.py
-symbol: TakeawaySummaryData
-feature: Order Management
-description: >
-  Pydantic model for takeaway order tracking with restaurant confirmation status, prep time, pickup scheduling, and confirmation codes.
-
-file: services/order_management/takeaway_pymodels.py
-symbol: TakeawayPickupTimePayload
-feature: Order Management
-description: >
-  Webhook payload model bundling TakeawaySummaryData with RestaurantMasterData for pickup time notifications.
-
-file: services/order_management/takeaway_pymodels.py
-symbol: RestaurantMasterData
-feature: Order Management
-description: >
-  Pydantic model for restaurant master data including coordinates, address fields, and admin list used in webhook payloads.
-
-file: services/order_service.py
+```code-ref
+file: packages/restaurant-agent-runtime/src/restaurant_agent_runtime/services/order_service.py
 symbol: get_min_order_value
-feature: Order Management
+feature: order-management
 description: >
-  Async function that calls the Ordelo pricing endpoint with customer coordinates and restaurant reference to retrieve the minimum order value.
+  Calls the restaurant Ordelo pricing endpoint using an injected database client.
+```
 
-file: services/order_service.py
-symbol: _resolve_restaurant_coordinates
-feature: Order Management
-description: >
-  Resolves restaurant latitude/longitude from explicit parameters or by querying the restaurant_master table with rest_ref.
+## Edge Cases
 
-file: services/order_service.py
-symbol: get_min_order_value_for_location
-feature: Order Management
-description: >
-  Combines restaurant coordinate resolution with the pricing service call to return a human-readable minimum order value message.
-
-### Edge Cases
-- Order ID collision is mitigated by the salted hash using recipient phone, date, and daily sequence number, but two orders from the same phone on the same day rely on the sequence to differentiate.
-- `FoodOrder.from_order_id` returns None if the order is not found or if `update_final_order_value_in_db` fails, so callers must handle None gracefully.
-- Pricing service returning a non-dict response causes `update_final_order_value_in_db` to fail and return False, leaving `final_order_value` as None.
-- Customer not found in `customer_master` during pricing lookup prevents final order value calculation; the order remains without computed fees.
-- `_fetch_order_items` returns an empty list on database failure, causing `build_wa_order_reciept_for_cust` and `build_wa_order_reciept_for_rest` to raise ValueError.
-- Receipt generation falls back to `total_price` when `final_order_value` is None, which may understate the customer-facing total.
-- `get_stripe_payment_link` returns None on HTTP errors from the Stripe microservice, requiring the caller to handle missing payment URLs.
-- Legacy `OrderHandler.insert_order_items` uses `executemany` without explicit transaction rollback, so a partial insert failure may leave orphaned order rows.
-- `get_min_order_value` returns None on any HTTP or unexpected error, so the agent must handle missing minimum order values.
-- Restaurant receipt omits service charge and delivery fee by design, showing only `total_price` to reflect the restaurant's food value payout.
+- Cross-restaurant paths return `404` before database, graph, or WhatsApp work.
+- URL/body recipient or thread mismatches are rejected before sending a receipt.
+- Missing order items prevent receipt generation.
+- A missing `final_order_value` makes the customer receipt display
+  `total_price`; upstream persistence owns fee calculation.
+- Minimum-order lookup failure returns `None`; it does not mutate the order.

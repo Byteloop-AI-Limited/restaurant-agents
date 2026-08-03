@@ -28,12 +28,16 @@ class CustRestMap(BaseModel):
     )
 
     @classmethod
-    def from_cust_id_and_rest_ref(cls, cust_id: str, rest_ref: str) -> "CustRestMap":
+    def from_cust_id_and_rest_ref(
+        cls,
+        cust_id: str,
+        rest_ref: str,
+        *,
+        database_client,
+    ) -> "CustRestMap":
         """Fetch the cust_rest_map record for the given customer and restaurant."""
-        from restaurant_agent_runtime.config import client_ordelo
-
         resp = (
-            client_ordelo.table("cust_rest_map")
+            database_client.table("cust_rest_map")
             .select("*")
             .eq("cust_id", cust_id)
             .eq("rest_ref", rest_ref.upper())
@@ -59,6 +63,8 @@ class CustRestMap(BaseModel):
         rest_ref: str,
         has_consent: bool = False,
         consent_dtts: Optional[datetime.datetime] = None,
+        *,
+        database_client,
     ) -> "CustRestMap":
         """
         Insert or update a cust_rest_map record.
@@ -66,8 +72,6 @@ class CustRestMap(BaseModel):
         consent_dtts is only included in the payload when provided.
         Returns the resulting CustRestMap instance.
         """
-        from restaurant_agent_runtime.config import client_ordelo
-
         payload: dict = {
             "cust_id": cust_id,
             "rest_ref": rest_ref.upper(),
@@ -76,7 +80,7 @@ class CustRestMap(BaseModel):
         }
 
         resp = (
-            client_ordelo.table("cust_rest_map")
+            database_client.table("cust_rest_map")
             .upsert(payload, on_conflict="cust_id,rest_ref")
             .execute()
         )

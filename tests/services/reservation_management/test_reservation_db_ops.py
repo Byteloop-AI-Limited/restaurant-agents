@@ -1,6 +1,6 @@
 """
 Unit tests for utils_common.reservation_management.reservation_db_ops
-    . Loads the module with stubbed config (project_settings.salt, logger)
+    . Loads the module with a stubbed logger
     . Verifies ReservationModel generates 4-character encoded reservation IDs
     . Verifies _create_reservation_id rejects non-4-digit recipients
     . Exercises ReservationHandler against FakeAsyncPool
@@ -34,7 +34,11 @@ def reservation_module(monkeypatch):
 
 def test_reservation_model_generates_id_with_rest_ref_prefix(reservation_module):
     record = reservation_module.ReservationModel(
-        rest_ref="bnat", seq_id=1, recipient="447000001234", thread_id="t-1"
+        rest_ref="bnat",
+        salt="unit-test-salt",
+        seq_id=1,
+        recipient="447000001234",
+        thread_id="t-1",
     )
 
     assert record.reservation_id.startswith("BNAT-")
@@ -47,7 +51,11 @@ def test_reservation_model_generates_id_with_rest_ref_prefix(reservation_module)
 def test_reservation_model_rejects_non_digit_recipient(reservation_module):
     with pytest.raises(ValueError):
         reservation_module.ReservationModel(
-            rest_ref="BNAT", seq_id=1, recipient="447aaa", thread_id="t-1"
+            rest_ref="BNAT",
+            salt="unit-test-salt",
+            seq_id=1,
+            recipient="447aaa",
+            thread_id="t-1",
         )
 
 
@@ -67,7 +75,11 @@ async def test_reservation_handler_create_record_executes_insert(reservation_mod
     pool = FakeAsyncPool()
     handler = reservation_module.ReservationHandler(pool)
     record = reservation_module.ReservationModel(
-        rest_ref="BNAT", seq_id=1, recipient="447000001234", thread_id="t-1"
+        rest_ref="BNAT",
+        salt="unit-test-salt",
+        seq_id=1,
+        recipient="447000001234",
+        thread_id="t-1",
     )
 
     ok = await handler.create_reservation_record(record)
@@ -108,7 +120,11 @@ async def test_process_reservation_into_db_returns_reservation_id(reservation_mo
     pool = FakeAsyncPool(fetchone_result={"get_next_daily_seq": 7})
 
     result = await reservation_module.process_reservation_into_db(
-        pool, "447000001234", "t-1", rest_ref="SFCS"
+        pool,
+        "447000001234",
+        "t-1",
+        rest_ref="SFCS",
+        salt="unit-test-salt",
     )
 
     assert isinstance(result, str)

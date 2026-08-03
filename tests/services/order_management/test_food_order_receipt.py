@@ -12,8 +12,6 @@ Unit tests for WhatsApp order receipt formatting helpers
     . test_receipt_raises_when_no_items
 """
 
-from types import ModuleType
-
 import pytest
 
 from tests._stubs.config_stub import FakeSupabaseClient, build_config_stub
@@ -36,20 +34,15 @@ def receipt_module(monkeypatch):
         }
     )
 
-    pricing_module = ModuleType("restaurant_agent_runtime.services.pricing_ms")
-    pricing_module.get_final_order_value = lambda **kwargs: {}
-
     food_order_module = load_module(
         "test_receipt_food_order_pymodel_module",
         "restaurant_agent_runtime.services/order_management/food_order_pymodel.py",
         monkeypatch,
-        {"config": config_stub, "restaurant_agent_runtime.services.pricing_ms": pricing_module},
     )
-    order_db_ops_new_module = load_module(
-        "test_receipt_order_db_ops_new_module",
-        "restaurant_agent_runtime.services/order_management/order_db_ops_new.py",
+    order_item_module = load_module(
+        "test_receipt_order_item_pymodel_module",
+        "restaurant_agent_runtime.services/order_management/order_item_pymodel.py",
         monkeypatch,
-        {"config": config_stub},
     )
 
     module = load_module(
@@ -59,7 +52,7 @@ def receipt_module(monkeypatch):
         {
             "config": config_stub,
             "restaurant_agent_runtime.services.order_management.food_order_pymodel": food_order_module,
-            "restaurant_agent_runtime.services.order_management.order_db_ops_new": order_db_ops_new_module,
+            "restaurant_agent_runtime.services.order_management.order_item_pymodel": order_item_module,
         },
     )
     module._config_stub = config_stub
@@ -108,7 +101,8 @@ def test_format_order_item_lines_handles_modifications(receipt_module):
 
 def test_customer_receipt_includes_charges_total_and_notes(receipt_module):
     header, text = receipt_module.build_wa_order_reciept_for_cust(
-        food_order=make_food_order(receipt_module)
+        food_order=make_food_order(receipt_module),
+        database_client=receipt_module._config_stub.client_ordelo,
     )
 
     assert header == "Order #ELAS-1"
@@ -141,9 +135,10 @@ def test_restaurant_receipt_uses_food_total_and_kitchen_header(receipt_module):
 
 
 def test_receipt_raises_when_no_items(receipt_module):
-    receipt_module.client_ordelo = FakeSupabaseClient(table_data={"order_item": []})
+    database_client = FakeSupabaseClient(table_data={"order_item": []})
 
     with pytest.raises(ValueError, match="No order_items"):
         receipt_module.build_wa_order_reciept_for_cust(
-            food_order=make_food_order(receipt_module)
+            food_order=make_food_order(receipt_module),
+            database_client=database_client,
         )

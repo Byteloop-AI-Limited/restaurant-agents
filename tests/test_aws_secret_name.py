@@ -59,9 +59,7 @@ def test_secret_name_uses_env_var(monkeypatch):
         stubs={"boto3": boto3_stub},
     )
 
-    assert fake_client.requested_ids == ["restaurant-agents-env"]
-
-    fake_client.requested_ids.clear()
+    assert fake_client.requested_ids == []
     result = aws_setting.get_agent_env()
 
     assert fake_client.requested_ids == ["restaurant-agents-env"]
@@ -111,17 +109,12 @@ def test_lambda_startup_uses_shared_secret_and_helper_honors_override(
         stubs={"boto3": boto3_stub},
     )
 
-    assert fake_client.requested_ids == ["restaurant-agents-env"]
-
-    fake_client.requested_ids.clear()
+    assert fake_client.requested_ids == []
     result = aws_setting.get_agent_env()
 
     assert fake_client.requested_ids == [expected_name]
     assert result == {"sentinel": "value"}
-    assert boto3_stub.session_calls == [
-        ((), {"region_name": "eu-west-1"}),
-        ((), {"region_name": "eu-west-1"}),
-    ]
+    assert boto3_stub.session_calls == [((), {"region_name": "eu-west-1"})]
 
 
 def test_client_error_is_raised_as_runtime_error(monkeypatch):

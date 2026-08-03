@@ -86,7 +86,8 @@ existing `GraphAdapterFactory` callable.
 1. An app entrypoint supplies its `RestaurantIdentity`,
    `RestaurantPresentation`, `GRAPH_ADAPTER_FACTORY`, and `AgentBindings` to
    `create_restaurant_app()`.
-2. The web factory loads only the selected WABA namespace, creates one async and
+2. The web factory calls `load_settings_bundle(identity)`, which fetches
+   settings once, loads only the selected WABA namespace, creates one async and
    one sync WhatsApp client, and constructs one `RestaurantRuntime`.
 3. The app's `agent_recipe.py` has already loaded three complete prompt files
    into an immutable `RestaurantPrompts` value and bound them to
@@ -105,8 +106,9 @@ existing `GraphAdapterFactory` callable.
    malformed persisted tool-call tails, and creates `ContextSchema`.
 8. `ContextSchema` receives the same async WhatsApp client held by the
    `RestaurantRuntime`, plus the database pool, recipient, restaurant identity,
-   presentation, project settings, and Ordelo client. Tools therefore use the
-   exact application runtime rather than module-global clients.
+   presentation, project and payment settings, and Ordelo client. Tools
+   therefore use the exact application runtime rather than module-global
+   settings or clients.
 9. Standard transfer tools update `active_agent` with parent-graph
    `Command` objects. `cleanup_before_model` and `respond_on_wa` coordinate
    `/DoNotRespond:` turns and outbound WhatsApp responses.

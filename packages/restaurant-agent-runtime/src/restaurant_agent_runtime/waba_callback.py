@@ -53,12 +53,18 @@ def resolve_effective_callback_url(
     return None
 
 
-def _restaurant_master_details(rest_ref: str) -> dict[str, Any]:
+def _restaurant_master_details(
+    rest_ref: str,
+    database_client: Any,
+) -> dict[str, Any]:
     """Load cached restaurant diagnostics without importing config at startup."""
 
     from restaurant_agent_runtime.config.params import get_restaurant_master_cached
 
-    restaurant = get_restaurant_master_cached(rest_ref)
+    restaurant = get_restaurant_master_cached(
+        rest_ref,
+        database_client=database_client,
+    )
     return {
         "admins": restaurant.admins,
         "service_hours": restaurant.service_hours_json,
@@ -99,7 +105,9 @@ async def build_runtime_details(runtime: RestaurantRuntime) -> dict[str, Any]:
     async def load_restaurant_details():
         try:
             return await asyncio.to_thread(
-                _restaurant_master_details, runtime.identity.rest_ref
+                _restaurant_master_details,
+                runtime.identity.rest_ref,
+                runtime.settings.database_client,
             ), None
         except Exception:
             return {}, "unavailable"

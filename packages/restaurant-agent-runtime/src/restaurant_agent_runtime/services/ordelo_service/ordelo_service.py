@@ -15,10 +15,10 @@ Functions/Classes:
 # %%
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
 
 import httpx
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from restaurant_agent_runtime.config import logger
 from restaurant_agent_runtime.services.ordelo_service.datamodels.customer_master_pymodel import (
@@ -33,14 +33,20 @@ from restaurant_agent_runtime.services.ordelo_service.datamodels.cust_rest_map_p
 class OrdeloService(BaseModel):
     """Service client for Ordelo backend REST API customer operations."""
 
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     rest_ref: str
+    database_client: Any
 
     async def _get_base_url(self) -> str:
         """Fetch Ordelo base URL from ordelo_config (cached 5 min)."""
         from restaurant_agent_runtime.config.params import get_restaurant_base_url_async
 
         # return "http://localhost:3100"
-        return await get_restaurant_base_url_async("ORDELO")
+        return await get_restaurant_base_url_async(
+            "ORDELO",
+            database_client=self.database_client,
+        )
 
     async def create_or_update_customer(
         self, request: CreateOrUpdateCustomerRequest
@@ -132,7 +138,10 @@ class OrdeloService(BaseModel):
             Tuple of (CustomerMaster, ask_for_consent).
         """
         try:
-            customer = CustomerMaster.from_cust_id(recipient)
+            customer = CustomerMaster.from_cust_id(
+                recipient,
+                database_client=self.database_client,
+            )
             customer_exists = True
         except ValueError:
             customer_exists = False
@@ -161,7 +170,9 @@ class OrdeloService(BaseModel):
             customer = CustomerMaster(**result)
             try:
                 consent = CustRestMap.from_cust_id_and_rest_ref(
-                    recipient, self.rest_ref
+                    recipient,
+                    self.rest_ref,
+                    database_client=self.database_client,
                 )
                 ask_for_consent = consent.ask_for_marketing_consent(30)
             except ValueError:
@@ -169,7 +180,9 @@ class OrdeloService(BaseModel):
         else:
             try:
                 consent = CustRestMap.from_cust_id_and_rest_ref(
-                    recipient, self.rest_ref
+                    recipient,
+                    self.rest_ref,
+                    database_client=self.database_client,
                 )
                 ask_for_consent = consent.ask_for_marketing_consent(30)
             except ValueError:

@@ -26,7 +26,6 @@ def test_healthz_returns_ok():
         llm=SimpleNamespace(),
         payment=SimpleNamespace(),
         maps=SimpleNamespace(),
-        microservices=SimpleNamespace(),
         waba=SimpleNamespace(),
     )
     app = create_restaurant_app(

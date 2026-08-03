@@ -16,6 +16,9 @@ guides are secondary views.
    composition, customization, and source navigation.
 5. Use the [interactive Agent runtime guide](guides/agent-runtime-composition.html)
    as an optional visual companion.
+6. Read the [architectural concepts primer](guides/architectural-concepts-primer.md)
+   for the reasoning behind the composition patterns — module depth, domain
+   models, partials, protocols, and a review checklist for generated code.
 
 ## Documentation Types
 

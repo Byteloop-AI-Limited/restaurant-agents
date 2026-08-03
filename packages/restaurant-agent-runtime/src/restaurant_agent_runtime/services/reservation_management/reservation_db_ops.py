@@ -17,13 +17,12 @@ from datetime import datetime
 from pydantic import BaseModel, Field, model_validator
 import psycopg
 
-from restaurant_agent_runtime.config import project_settings, logger
+from restaurant_agent_runtime.config import logger
 
 
 # %% define variables
 
 
-SALT = project_settings.salt
 ALPHABET = "abcdefghijklmnopqrstuvwxyz"
 
 # %% Data models
@@ -31,6 +30,7 @@ ALPHABET = "abcdefghijklmnopqrstuvwxyz"
 
 class ReservationModel(BaseModel):
     rest_ref: str = Field(exclude=True)
+    salt: str = Field(exclude=True, repr=False)
     reservation_id: str | None = Field(default=None)
     seq_id: int
     recipient: str
@@ -60,7 +60,7 @@ class ReservationModel(BaseModel):
         if not len(number) == 4 or not number.isdigit():
             raise ValueError("Number must be a 4-digit string")
 
-        salted_number = f"{number}{SALT}{self.reservation_dt}"
+        salted_number = f"{number}{self.salt}{self.reservation_dt}"
         hashed_number = hashlib.sha256(salted_number.encode()).hexdigest()
 
         encoded_chars: str = ""
@@ -148,6 +148,7 @@ async def process_reservation_into_db(
     thread_id: str,
     *,
     rest_ref: str,
+    salt: str,
 ):
     res_handler = ReservationHandler(pool)
     seq_id = await res_handler.get_seq_num()
@@ -157,6 +158,7 @@ async def process_reservation_into_db(
         "thread_id": thread_id,
         "seq_id": seq_id,
         "rest_ref": rest_ref,
+        "salt": salt,
     }
     _record = ReservationModel(**res_payload)
     reservation_id = _record.reservation_id

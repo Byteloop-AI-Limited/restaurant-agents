@@ -76,7 +76,6 @@ def _settings(identity: RestaurantIdentity) -> RestaurantSettingsBundle:
         llm=SimpleNamespace(model="fake"),
         payment=SimpleNamespace(),
         maps=SimpleNamespace(),
-        microservices=SimpleNamespace(),
         waba=SimpleNamespace(
             namespace=identity.waba_namespace,
             waa_account_id=f"{identity.waba_namespace}-account",
@@ -156,7 +155,7 @@ def test_details_exposes_selected_runtime_identity_without_raw_secrets(
 ):
     monkeypatch.setattr(
         "restaurant_agent_runtime.waba_callback._restaurant_master_details",
-        lambda selected_rest_ref: {
+        lambda selected_rest_ref, database_client: {
             "admins": [f"{selected_rest_ref}-admin"],
             "service_hours": {"monday": [["10:00", "22:00"]]},
         },

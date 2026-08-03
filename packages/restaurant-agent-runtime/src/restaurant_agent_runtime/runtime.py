@@ -45,7 +45,6 @@ class RestaurantSettingsBundle:
     llm: Any
     payment: Any
     maps: Any
-    microservices: Any
     waba: Any
 
 

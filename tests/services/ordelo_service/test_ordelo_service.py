@@ -33,7 +33,7 @@ def _stub_config(monkeypatch):
 
     params_stub = ModuleType("restaurant_agent_runtime.config.params")
 
-    async def get_restaurant_base_url_async(key):
+    async def get_restaurant_base_url_async(key, *, database_client):
         return "https://ordelo.test"
 
     params_stub.get_restaurant_base_url_async = get_restaurant_base_url_async
@@ -88,6 +88,13 @@ def _patch_httpx(monkeypatch, module, response):
     return capture
 
 
+def _service(module):
+    return module.OrdeloService(
+        rest_ref="ELAS",
+        database_client=SimpleNamespace(),
+    )
+
+
 @pytest.mark.asyncio
 async def test_create_or_update_customer_posts_payload(ordelo_module, monkeypatch):
     capture = _patch_httpx(
@@ -95,7 +102,7 @@ async def test_create_or_update_customer_posts_payload(ordelo_module, monkeypatc
         ordelo_module,
         FakeResponse(json_data={"cust_id": "447000000001"}),
     )
-    svc = ordelo_module.OrdeloService(rest_ref="ELAS")
+    svc = _service(ordelo_module)
     req = ordelo_module.CreateOrUpdateCustomerRequest(
         cust_id="447000000001", rest_ref="ELAS", cust_name="Bas"
     )
@@ -119,7 +126,7 @@ async def test_create_or_update_customer_returns_none_on_http_error(
         ordelo_module,
         FakeResponse(raise_exc=httpx.HTTPError("boom")),
     )
-    svc = ordelo_module.OrdeloService(rest_ref="ELAS")
+    svc = _service(ordelo_module)
     req = ordelo_module.CreateOrUpdateCustomerRequest(
         cust_id="447000000001", rest_ref="ELAS"
     )
@@ -131,7 +138,7 @@ async def test_create_or_update_customer_returns_none_on_http_error(
 @pytest.mark.asyncio
 async def test_update_address_posts_payload(ordelo_module, monkeypatch):
     capture = _patch_httpx(monkeypatch, ordelo_module, FakeResponse(json_data={"ok": True}))
-    svc = ordelo_module.OrdeloService(rest_ref="ELAS")
+    svc = _service(ordelo_module)
     req = ordelo_module.UpdateAddressRequest(
         cust_id="447000000001",
         rest_ref="ELAS",
@@ -151,7 +158,7 @@ async def test_update_address_posts_payload(ordelo_module, monkeypatch):
 @pytest.mark.asyncio
 async def test_update_cust_rest_map_posts_payload(ordelo_module, monkeypatch):
     capture = _patch_httpx(monkeypatch, ordelo_module, FakeResponse(json_data={"ok": True}))
-    svc = ordelo_module.OrdeloService(rest_ref="ELAS")
+    svc = _service(ordelo_module)
     req = ordelo_module.UpdateCustRestMapRequest(
         cust_id="447000000001", rest_ref="ELAS", has_consent=True
     )
@@ -180,7 +187,7 @@ async def test_get_or_create_customer_master_new_customer(ordelo_module, monkeyp
         ordelo_module.OrdeloService, "create_or_update_customer", fake_create
     )
 
-    svc = ordelo_module.OrdeloService(rest_ref="ELAS")
+    svc = _service(ordelo_module)
     customer, ask = await svc.get_or_create_customer_master(
         "447000000001", wa_name="Bas"
     )
@@ -199,11 +206,11 @@ async def test_get_or_create_customer_master_existing_customer_no_name(
     monkeypatch.setattr(
         ordelo_module.CustomerMaster,
         "from_cust_id",
-        classmethod(lambda cls, cust_id: existing),
+        classmethod(lambda cls, cust_id, **kwargs: existing),
     )
 
     # Stub consent class to return ask=False for already-consented
-    def fake_lookup(cls, cust_id, rest_ref):
+    def fake_lookup(cls, cust_id, rest_ref, **kwargs):
         return SimpleNamespace(
             ask_for_marketing_consent=lambda days=30: False
         )
@@ -214,7 +221,7 @@ async def test_get_or_create_customer_master_existing_customer_no_name(
         classmethod(fake_lookup),
     )
 
-    svc = ordelo_module.OrdeloService(rest_ref="ELAS")
+    svc = _service(ordelo_module)
     customer, ask = await svc.get_or_create_customer_master("447000000001")
 
     assert customer is existing
@@ -229,7 +236,7 @@ async def test_get_or_create_customer_master_existing_with_name_consent_missing(
     monkeypatch.setattr(
         ordelo_module.CustomerMaster,
         "from_cust_id",
-        classmethod(lambda cls, cust_id: existing),
+        classmethod(lambda cls, cust_id, **kwargs: existing),
     )
 
     async def fake_create(self, request):
@@ -239,7 +246,7 @@ async def test_get_or_create_customer_master_existing_with_name_consent_missing(
         ordelo_module.OrdeloService, "create_or_update_customer", fake_create
     )
 
-    def raise_value_error(cls, cust_id, rest_ref):
+    def raise_value_error(cls, cust_id, rest_ref, **kwargs):
         raise ValueError("no consent")
 
     monkeypatch.setattr(
@@ -248,7 +255,7 @@ async def test_get_or_create_customer_master_existing_with_name_consent_missing(
         classmethod(raise_value_error),
     )
 
-    svc = ordelo_module.OrdeloService(rest_ref="ELAS")
+    svc = _service(ordelo_module)
     customer, ask = await svc.get_or_create_customer_master(
         "447000000001", wa_name="Other"
     )
