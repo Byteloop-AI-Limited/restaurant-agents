@@ -3,8 +3,7 @@
 # %% Select the app, using the same names accepted by scripts/run-agent.sh.
 from importlib import import_module
 
-from restaurant_agent_runtime.config.waba_setting import WabaBusinessSettings
-from restaurant_agent_runtime.utils.aws_setting import agent_env
+from restaurant_agent_runtime.config.bundle import load_settings_bundle
 
 APP = "sfcs"
 CALLBACK_URL = "https://rest-agent-test.ordelo.app/"
@@ -21,11 +20,10 @@ except KeyError as exc:
 
 IDENTITY = import_module(identity_module).IDENTITY
 
-# %% Load the selected app's WABA settings and construct a synchronous client.
-waba_business_settings = WabaBusinessSettings.for_namespace(
-    IDENTITY.waba_namespace,
-    agent_env,
-)
+# %% Load the selected app's complete settings bundle and construct a synchronous client.
+# This reads the shared AWS secret once, then selects only IDENTITY.waba_namespace.
+settings = load_settings_bundle(IDENTITY)
+waba_business_settings = settings.waba
 wa_client = waba_business_settings.create_sync_client()
 wa_client
 # %% Inspect the phone's effective callback configuration before updating it.

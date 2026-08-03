@@ -27,12 +27,61 @@ class RestaurantIdentity:
 
 
 @dataclass(frozen=True, slots=True)
+class EnquiryOption:
+    """One app-owned triage enquiry button and its canonical intent."""
+
+    title: str
+    human_message: str
+
+    def __post_init__(self) -> None:
+        title = self.title.strip()
+        human_message = self.human_message.strip()
+        if not title or not human_message:
+            raise ValueError("Enquiry option title and human_message must not be empty")
+        object.__setattr__(self, "title", title)
+        object.__setattr__(self, "human_message", human_message)
+
+
+@dataclass(frozen=True, slots=True)
+class EnquiryMenu:
+    """App-owned WhatsApp menu shown for non-order enquiries."""
+
+    prompt: str
+    options: tuple[EnquiryOption, ...]
+
+    def __post_init__(self) -> None:
+        prompt = self.prompt.strip()
+        options = tuple(self.options)
+        if not prompt:
+            raise ValueError("Enquiry menu prompt must not be empty")
+        if not 1 <= len(options) <= 3:
+            raise ValueError("Enquiry menu must contain between one and three options")
+        if len({option.title.casefold() for option in options}) != len(options):
+            raise ValueError("Enquiry menu option titles must be unique")
+        object.__setattr__(self, "prompt", prompt)
+        object.__setattr__(self, "options", options)
+
+
+DEFAULT_ENQUIRY_MENU = EnquiryMenu(
+    prompt="What would you like help with?",
+    options=(
+        EnquiryOption("Customer complaint", "I want to make a customer complaint"),
+        EnquiryOption("Parking availability", "I want to know about parking availability"),
+        EnquiryOption("Subscribe for offers", "I want to subscribe for offers"),
+    ),
+)
+
+
+@dataclass(frozen=True, slots=True)
 class RestaurantPresentation:
-    """Restaurant-owned wording used by otherwise reusable services."""
+    """Restaurant-owned customer-facing wording used by reusable services."""
 
     display_name: str
     contact_phone: str | None = None
     logo_url: str | None = None
+    delivery_button_label: str = "Delivery"
+    takeaway_button_label: str = "Takeaway"
+    enquiry_menu: EnquiryMenu = DEFAULT_ENQUIRY_MENU
 
 
 @dataclass(frozen=True, slots=True)

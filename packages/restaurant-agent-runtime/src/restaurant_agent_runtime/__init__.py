@@ -1,6 +1,8 @@
 """Reusable runtime, configuration, services, and webhooks for restaurant agents."""
 
 from .runtime import (
+    EnquiryMenu,
+    EnquiryOption,
     GraphAdapter,
     GraphAdapterFactory,
     RestaurantIdentity,
@@ -10,6 +12,8 @@ from .runtime import (
 )
 
 __all__ = [
+    "EnquiryMenu",
+    "EnquiryOption",
     "GraphAdapter",
     "GraphAdapterFactory",
     "RestaurantIdentity",

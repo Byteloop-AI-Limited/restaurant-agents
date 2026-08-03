@@ -4,7 +4,7 @@
 
 select admins, city, * from restaurant_master where rest_ref = 'SFCS';
 
-select * from ordelo_config where config_key like '%_APP_URL';
+select * from ordelo_config where config_key like '%SFCS_APP_URL';
 
 select * from rider_master where rider_name in ('Lohith', 'Rahul', 'Bloop');
 select * from rider_master where is_in_shift = true;
