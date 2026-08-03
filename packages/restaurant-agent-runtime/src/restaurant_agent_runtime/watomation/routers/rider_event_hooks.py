@@ -111,9 +111,7 @@ async def rider_restaurant_cc_path(
         Should send live-location link to both customer and restaurant
     Uses BackgroundTasks for async notifications and graph updates.
     """
-    ordelo_app_url = runtime.settings.project.get_ordelo_url(
-        runtime.settings.database_client
-    )
+    ordelo_app_url = runtime.operational_lookups.get_app_url("ORDELO")
     background_tasks.add_task(
         run_background_task,
         "rider_restaurant_cc",

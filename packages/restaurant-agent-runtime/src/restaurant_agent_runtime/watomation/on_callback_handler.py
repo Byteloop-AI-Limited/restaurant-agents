@@ -22,9 +22,7 @@ import httpx
 from pywa_async import WhatsApp
 
 from restaurant_agent_runtime.config import logger
-from restaurant_agent_runtime.config.params import get_restaurant_master_cached
 from restaurant_agent_runtime.services.tz_utils import UK_TZ
-from restaurant_agent_runtime.watomation.overwatch import is_overwatch_recipient
 from restaurant_agent_runtime.runtime import GraphAdapter, RestaurantRuntime
 from restaurant_agent_runtime.watomation.dedup import wa_dedup
 
@@ -57,10 +55,12 @@ async def _run_selected_enquiry(
     await graph_adapter.run_rest_graph_with_custom_msg(
         recipient=recipient,
         msgs=[
-            SystemMessage(
-                "The customer selected a specific enquiry option. Answer or handle that option directly; do not call ask_user_to_select_enquiry."
-            ),
             HumanMessage(human_msg),
+            SystemMessage(
+                "The customer has already chosen a specific enquiry option (their choice is the message above). "
+                "Handle it directly per your rules. The enquiry menu has already been shown, so do NOT call "
+                "ask_user_to_select_enquiry again."
+            ),
         ],
         state_update_dict={
             "rest_ref": rest_ref,
@@ -128,9 +128,7 @@ async def admin_collection_ready(
     callback_data_type: type,
     runtime: RestaurantRuntime,
 ):
-    ordelo_app_url = runtime.settings.project.get_ordelo_url(
-        runtime.settings.database_client
-    )
+    ordelo_app_url = runtime.operational_lookups.get_app_url("ORDELO")
     #  admin_order_reciept - creates the callback data
     callback_data = callback_data_type(**json.loads(callback.data))
 
@@ -202,11 +200,10 @@ async def select_service_handler(
         "takeaway_agent": "takeaway",
     }.get(active_agent)
     if order_type is not None:
-        master = get_restaurant_master_cached(
-            runtime.identity.rest_ref,
-            database_client=runtime.settings.database_client,
-        )
-        if not is_overwatch_recipient(recipient) and not master.accepts_new_order(
+        master = runtime.operational_lookups.get_restaurant_master()
+        if not runtime.operational_lookups.is_overwatch_recipient(
+            recipient
+        ) and not master.accepts_new_order(
             order_type, datetime.now(UK_TZ)
         ):
             await wa.send_message(
@@ -316,6 +313,7 @@ async def select_consent_handler(
         ordelo_service = OrdeloService(
             rest_ref=str(rest_ref).upper(),
             database_client=runtime.settings.database_client,
+            operational_lookups=runtime.operational_lookups,
         )
         await ordelo_service.update_cust_rest_map(
             UpdateCustRestMapRequest(
