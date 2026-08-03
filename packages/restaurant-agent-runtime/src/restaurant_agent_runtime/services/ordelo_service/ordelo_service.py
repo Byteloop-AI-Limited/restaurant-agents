@@ -3,6 +3,7 @@ Ordelo backend REST API service for customer operations
   . Provides async methods to create/update customers via Ordelo API
   . Handles customer address updates with webhook notifications
   . Manages customer-restaurant consent mapping upserts
+  . Loads Ordelo-owned operational configuration
   . Uses httpx async client with centralized base URL resolution
 Functions/Classes:
   . OrdeloService
@@ -26,6 +27,7 @@ from restaurant_agent_runtime.services.ordelo_service.datamodels.customer_master
     CreateOrUpdateCustomerRequest,
     UpdateAddressRequest,
     UpdateCustRestMapRequest,
+    RestaurantComplaintRequest,
 )
 from restaurant_agent_runtime.services.ordelo_service.datamodels.cust_rest_map_pymodel import CustRestMap
 
@@ -37,6 +39,28 @@ class OrdeloService(BaseModel):
 
     rest_ref: str
     database_client: Any
+
+    def get_overwatch_list(self) -> list[str]:
+        """Return normalized recipients from Ordelo's ``overwatch_list`` config."""
+        response = (
+            self.database_client.table("ordelo_config")
+            .select("config_value")
+            .eq("config_key", "overwatch_list")
+            .limit(1)
+            .execute()
+        )
+        data = (
+            response["data"]
+            if isinstance(response, dict) and "data" in response
+            else response.data
+            if hasattr(response, "data")
+            else None
+        )
+        if not data:
+            raise ValueError("No config found for overwatch_list in ordelo_config")
+
+        raw_value = data[0]["config_value"] or ""
+        return [item.strip() for item in raw_value.split(",") if item.strip()]
 
     async def _get_base_url(self) -> str:
         """Fetch Ordelo base URL from ordelo_config (cached 5 min)."""
@@ -121,6 +145,27 @@ class OrdeloService(BaseModel):
             except httpx.HTTPError as e:
                 logger.error(
                     f"Error updating cust_rest_map for {request.cust_id}/{request.rest_ref}: {e}"
+                )
+                return None
+
+    async def submit_restaurant_complaint(
+        self, request: RestaurantComplaintRequest
+    ) -> Optional[dict]:
+        """Ask Ordelo to schedule restaurant-admin complaint notifications."""
+        base_url = await self._get_base_url()
+        url = f"{base_url}/customer-hooks/restaurant-complaints"
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.post(
+                    url, json=request.model_dump(exclude_none=True), timeout=10.0
+                )
+                response.raise_for_status()
+                return response.json()
+            except httpx.HTTPError as exc:
+                logger.error(
+                    "Could not schedule restaurant complaint for {}: {}",
+                    request.rest_ref,
+                    exc,
                 )
                 return None
 

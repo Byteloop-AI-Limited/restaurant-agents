@@ -60,6 +60,7 @@ def _register_whatsapp_handlers(
         admin_collection_ready,
         delivery_address_confirmation,
         restaurant_order_confirmation_handler,
+        select_enquiry_handler,
         select_consent_handler,
         select_service_handler,
     )
@@ -148,6 +149,15 @@ def _register_whatsapp_handlers(
             runtime=runtime,
         )
 
+    async def bound_enquiry(client, callback):
+        return await select_enquiry_handler(
+            client,
+            callback,
+            callback_data_type=bindings.callback_data_type,
+            graph_adapter=graph_adapter,
+            runtime=runtime,
+        )
+
     wa.add_handlers(
         MessageHandler(
             callback=bound_closed_message,
@@ -181,6 +191,10 @@ def _register_whatsapp_handlers(
         CallbackButtonHandler(
             callback=bound_service,
             filters=filters.contains("/SelectService"),
+        ),
+        CallbackButtonHandler(
+            callback=bound_enquiry,
+            filters=filters.contains("/SelectEnquiry"),
         ),
         CallbackButtonHandler(
             callback=bound_consent,

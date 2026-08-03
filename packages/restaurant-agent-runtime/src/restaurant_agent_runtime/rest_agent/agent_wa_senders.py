@@ -1,10 +1,16 @@
 """WhatsApp senders used by the standard Restaurant Agent graph."""
 
 from typing import Literal
+from datetime import datetime
 
 from pydantic import BaseModel
 from pywa.types import Button, ButtonUrl
 from pywa_async import WhatsApp
+
+from restaurant_agent_runtime.runtime import EnquiryMenu, RestaurantRuntime
+from restaurant_agent_runtime.config.params import get_restaurant_master_cached
+from restaurant_agent_runtime.services.tz_utils import UK_TZ
+from restaurant_agent_runtime.watomation.overwatch import is_overwatch_recipient
 
 class CallbackButtonData(BaseModel):
     model_config = {"frozen": True, "extra": "allow"}
@@ -36,6 +42,11 @@ async def select_service_wa_send(
     recipient: str,
     wa_client: WhatsApp,
     rest_ref: str,
+    *,
+    runtime: RestaurantRuntime | None = None,
+    restaurant_master=None,
+    delivery_button_label: str = "Delivery",
+    takeaway_button_label: str = "Takeaway",
 ) -> None:
     """
     Sends order type selection buttons with rest_ref included.
@@ -48,32 +59,51 @@ async def select_service_wa_send(
     normalized_rest_ref = str(rest_ref).lower()
     selection_text = "How can I help you today?"
 
+    if runtime is not None:
+        restaurant_master = restaurant_master or get_restaurant_master_cached(
+            runtime.identity.rest_ref,
+            database_client=runtime.settings.database_client,
+        )
+        delivery_button_label = runtime.presentation.delivery_button_label
+        takeaway_button_label = runtime.presentation.takeaway_button_label
+
     takeaway = CallbackButtonData(
         action="/SelectService",
         rest_ref=normalized_rest_ref,
         active_agent="takeaway_agent",
-        human_msg="I want Takeaway",
+        human_msg="I want takeaway",
     )
     delivery = CallbackButtonData(
         action="/SelectService",
         rest_ref=normalized_rest_ref,
         active_agent="delivery_agent",
-        human_msg="I want Delivery",
+        human_msg="I want delivery",
     )
     inquiry = CallbackButtonData(
         action="/SelectService",
         rest_ref=normalized_rest_ref,
         active_agent="triage_agent",
-        human_msg="Inquiry",
+        human_msg="I have an enquiry",
     )
+    buttons = []
+    now = datetime.now(UK_TZ)
+    if (
+        restaurant_master is None
+        or is_overwatch_recipient(recipient)
+        or restaurant_master.accepts_new_order("delivery", now)
+    ):
+        buttons.append(Button(title=delivery_button_label, callback_data=delivery.model_dump_json()))
+    if (
+        restaurant_master is None
+        or is_overwatch_recipient(recipient)
+        or restaurant_master.accepts_new_order("takeaway", now)
+    ):
+        buttons.append(Button(title=takeaway_button_label, callback_data=takeaway.model_dump_json()))
+    buttons.append(Button(title="Enquiry", callback_data=inquiry.model_dump_json()))
     await wa_client.send_message(
         to=recipient,
         text=selection_text,
-        buttons=[
-            Button(title="Delivery (20% off)", callback_data=delivery.model_dump_json()),
-            Button(title="Collection (15% off)", callback_data=takeaway.model_dump_json()),
-            Button(title="Inquiry", callback_data=inquiry.model_dump_json()),
-        ],
+        buttons=buttons,
     )
 
 
@@ -103,7 +133,6 @@ async def select_marketing_consent_wa_send(
         human_msg="No, thanks",
         response="no",
     )
-
     await wa_client.send_message(
         to=recipient,
         text="Would you like to receive marketing updates from your selected restaurant?",
@@ -114,6 +143,32 @@ async def select_marketing_consent_wa_send(
     )
 
 
+async def select_enquiry_wa_send(
+    recipient: str,
+    wa_client: WhatsApp,
+    rest_ref: str,
+    *,
+    menu: EnquiryMenu,
+) -> None:
+    """Send the app-owned enquiry choices (WhatsApp permits at most three)."""
+    normalized_rest_ref = str(rest_ref).lower()
+    buttons = [
+        Button(
+            title=option.title,
+            callback_data=CallbackButtonData(
+                action="/SelectEnquiry",
+                rest_ref=normalized_rest_ref,
+                active_agent="triage_agent",
+                human_msg=option.human_message,
+            ).model_dump_json(),
+        )
+        for option in menu.options
+    ]
+    await wa_client.send_message(
+        to=recipient,
+        text=menu.prompt,
+        buttons=buttons,
+    )
 # %%
 async def confirm_delivery_address_wa(
     recipient: str, address: dict, wa_client: WhatsApp, header: str = None

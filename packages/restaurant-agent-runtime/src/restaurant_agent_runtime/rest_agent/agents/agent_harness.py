@@ -24,6 +24,7 @@ This module should have NO imports from other agent modules to avoid circular im
 """
 
 import re
+from datetime import datetime
 from typing import Annotated, Any, Literal, Sequence
 
 from langchain.agents.middleware import after_agent, before_model
@@ -46,6 +47,13 @@ from pywa_async import WhatsApp
 from supabase._sync.client import Client
 from typing_extensions import NotRequired, TypedDict
 from loguru import logger
+
+from restaurant_agent_runtime.services.ordelo_service.datamodels.restaurant_master_pymodel import (
+    RestaurantMaster,
+)
+from restaurant_agent_runtime.services.tz_utils import UK_TZ
+from restaurant_agent_runtime.watomation.overwatch import is_overwatch_recipient
+from restaurant_agent_runtime.runtime import EnquiryMenu
 
 
 # %% Define AgentState
@@ -111,6 +119,11 @@ class ContextSchema(BaseModel):
     rest_ref: str
     restaurant_name: str
     restaurant_logo_url: str
+    restaurant_contact_phone: str | None = None
+    delivery_button_label: str = "Delivery"
+    takeaway_button_label: str = "Takeaway"
+    enquiry_menu: EnquiryMenu
+    restaurant_master: RestaurantMaster
     project_settings: Any
     payment_settings: Any
     client_ordelo: Client
@@ -156,6 +169,25 @@ async def _send_menu_tool(
     from restaurant_agent_runtime.rest_agent.agent_wa_senders import send_restaurant_menu
 
     ctx = runtime.context
+    if not is_overwatch_recipient(ctx.recipient) and not ctx.restaurant_master.accepts_new_order(
+        order_type, datetime.now(UK_TZ)
+    ):
+        await ctx.wa_client.send_message(
+            to=ctx.recipient,
+            text="Sorry, new orders for that service have closed for today. You can still send us an enquiry.",
+            reply_to_message_id=state.get("reply_to_msg_id"),
+        )
+        return Command(
+            goto=END,
+            update={
+                "messages": [
+                    ToolMessage(
+                        "New order menu blocked because the service order cutoff has passed.",
+                        tool_call_id=tool_call_id,
+                    )
+                ]
+            },
+        )
     recipient = ctx.recipient
     thread_id, _ = await ctx.thread_handler.get_or_create_thread(recipient)
     min_order_value = _normalize_min_order_value(state.get("min_order_value"))
@@ -253,6 +285,19 @@ def transfer_to_delivery(
     """
     if (guard := _run_transfer_guards(runtime.state, runtime.tool_call_id)) is not None:
         return guard
+    if not is_overwatch_recipient(runtime.context.recipient) and not runtime.context.restaurant_master.accepts_new_order(
+        "delivery", datetime.now(UK_TZ)
+    ):
+        return Command(
+            update={
+                "messages": [
+                    ToolMessage(
+                        "Delivery handoff blocked because new delivery orders are closed. Offer an enquiry instead.",
+                        tool_call_id=runtime.tool_call_id,
+                    )
+                ]
+            }
+        )
 
     transfer_message = ToolMessage(
         content="Transferred to delivery agent. Customer wants food delivery.",
@@ -318,6 +363,19 @@ def transfer_to_takeaway(
     """
     if (guard := _run_transfer_guards(state, runtime.tool_call_id)) is not None:
         return guard
+    if not is_overwatch_recipient(runtime.context.recipient) and not runtime.context.restaurant_master.accepts_new_order(
+        "takeaway", datetime.now(UK_TZ)
+    ):
+        return Command(
+            update={
+                "messages": [
+                    ToolMessage(
+                        "Takeaway handoff blocked because new takeaway orders are closed. Offer an enquiry instead.",
+                        tool_call_id=runtime.tool_call_id,
+                    )
+                ]
+            }
+        )
 
     _current_active_agent = state.get("active_agent", "triage_agent")
     _current_rest_ref = state.get("rest_ref")

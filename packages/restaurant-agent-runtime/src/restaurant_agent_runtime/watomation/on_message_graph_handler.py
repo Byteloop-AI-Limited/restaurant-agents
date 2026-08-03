@@ -35,9 +35,13 @@ from restaurant_agent_runtime.services.maps_service import AddressResolver
 from restaurant_agent_runtime.services.thread_management import ThreadHandler
 from restaurant_agent_runtime.services.tz_utils import UK_TZ
 from restaurant_agent_runtime.watomation.dedup import wa_dedup
+from restaurant_agent_runtime.watomation.overwatch import (
+    OVERWATCH_RECIPIENTS,
+    is_overwatch_recipient,
+)
 
 # %% Allowed users list
-ALLOWED_USERS = ["447448440754", "447446933210"]
+ALLOWED_USERS = list(OVERWATCH_RECIPIENTS)
 ALLOWED_USERS_FILTER = from_users(",".join(ALLOWED_USERS))
 
 
@@ -68,7 +72,7 @@ def _message_time_uk(msg: Message) -> datetime | None:
 def is_outside_service_hours(
     _: WhatsApp, msg: Message, runtime: RestaurantRuntime
 ) -> bool:
-    if msg.sender in ALLOWED_USERS:
+    if is_overwatch_recipient(msg.sender):
         return False
 
     msg_time = _message_time_uk(msg)

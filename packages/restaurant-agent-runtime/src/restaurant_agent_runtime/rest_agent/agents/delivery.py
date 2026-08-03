@@ -36,6 +36,7 @@ from restaurant_agent_runtime.rest_agent.agent_wa_senders import (
     confirm_delivery_address_wa,
     send_update_address_wa,
 )
+from restaurant_agent_runtime.rest_agent.prompt_runtime import render_prompt_middleware
 from restaurant_agent_runtime.services.payment_ms.payment import cancel_payment
 from restaurant_agent_runtime.services.order_service import get_min_order_value
 
@@ -63,7 +64,7 @@ async def capture_delivery_address(
         ctx = runtime.context
         await ctx.wa_client.send_message(
             to=ctx.recipient,
-            text="We can't change or capture a new delivery address after payment; please contact us on 01722 656 888.",
+            text=f"We can't change or capture a new delivery address after payment; please contact us on {ctx.restaurant_contact_phone or 'the restaurant'}.",
             reply_to_message_id=state.get("reply_to_msg_id"),
         )
         return Command(
@@ -136,7 +137,7 @@ async def update_address_of_existing_user(
         ctx = runtime.context
         await ctx.wa_client.send_message(
             to=ctx.recipient,
-            text="We can't change the delivery address after payment; please contact us on 01722 656 888.",
+            text=f"We can't change the delivery address after payment; please contact us on {ctx.restaurant_contact_phone or 'the restaurant'}.",
             reply_to_message_id=state.get("reply_to_msg_id"),
         )
         return Command(
@@ -217,7 +218,7 @@ async def confirm_delivery_address(
         ctx = runtime.context
         await ctx.wa_client.send_message(
             to=ctx.recipient,
-            text="We can't change the delivery address after payment; please contact us on 01722 656 888.",
+            text=f"We can't change the delivery address after payment; please contact us on {ctx.restaurant_contact_phone or 'the restaurant'}.",
             reply_to_message_id=state.get("reply_to_msg_id"),
         )
         return Command(
@@ -442,10 +443,22 @@ async def answer_general_query(
 
     q = (question or "").strip().lower()
 
-    # TODO: load restaurant details from restaurant_agent_runtime.config/DB
-    phone = "PLACEHOLDER_PHONE"
-    address = "PLACEHOLDER_ADDRESS"
-    opening_hours = "PLACEHOLDER_HOURS"
+    master = runtime.context.restaurant_master
+    phone = runtime.context.restaurant_contact_phone or "not available"
+    address = ", ".join(
+        part
+        for part in (
+            master.house_number,
+            master.building_name,
+            master.street_name,
+            master.city,
+            master.postcode,
+        )
+        if part
+    )
+    opening_hours = master.service_hours.format_week(
+        cutoff_minutes=master.delivery_order_cutoff_minutes
+    )
 
     is_payment_successful = state.get("is_payment_successful", False) is True
 
@@ -468,7 +481,7 @@ async def answer_general_query(
         return "I can transfer you to our takeaway team for collection orders."
 
     if any(k in q for k in ["dine in", "dine-in", "eat in", "reservation", "table"]):
-        return "I can transfer you to our dine-in reservation team."
+        return "We do not take table reservations; please visit as a walk-in."
 
     if any(k in q for k in ["add", "extra", "change", "edit"]):
         if is_payment_successful:
@@ -812,6 +825,7 @@ def build_delivery_agent(*, model, system_prompt: str, extra_tools=()):
         tools=[*delivery_tools, *extra_tools],
         system_prompt=system_prompt,
         middleware=[
+            render_prompt_middleware(system_prompt),
             cleanup_before_model,
             respond_on_wa,
         ],
