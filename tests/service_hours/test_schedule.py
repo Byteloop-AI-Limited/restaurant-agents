@@ -60,6 +60,14 @@ def test_current_interval_returns_active():
     assert ws.current_interval(_at(2025, 12, 1, 16)) is None
 
 
+def test_accepts_new_orders_respects_cutoff_and_overnight_interval():
+    ws = _ws({"mon": [["12:00", "23:00"]], "fri": [["18:00", "25:00"]]})
+    assert ws.accepts_new_orders(_at(2025, 12, 1, 22, 44), cutoff_minutes=15)
+    assert not ws.accepts_new_orders(_at(2025, 12, 1, 22, 45), cutoff_minutes=15)
+    assert ws.accepts_new_orders(_at(2025, 12, 6, 0, 44), cutoff_minutes=15)
+    assert not ws.accepts_new_orders(_at(2025, 12, 6, 0, 45), cutoff_minutes=15)
+
+
 def test_next_open_when_open_returns_at():
     ws = _ws({"mon": [["12:00", "21:30"]]})
     at = _at(2025, 12, 1, 13)

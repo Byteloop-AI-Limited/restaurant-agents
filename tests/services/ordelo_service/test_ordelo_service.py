@@ -12,6 +12,8 @@ Unit tests for OrdeloService HTTP client
     . test_create_or_update_customer_returns_none_on_http_error
     . test_update_address_posts_payload
     . test_update_cust_rest_map_posts_payload
+    . test_get_overwatch_list_parses_comma_separated_config
+    . test_get_overwatch_list_requires_config
     . test_get_or_create_customer_master_new_customer
     . test_get_or_create_customer_master_existing_customer_no_name
     . test_get_or_create_customer_master_existing_customer_with_name
@@ -93,6 +95,65 @@ def _service(module):
         rest_ref="ELAS",
         database_client=SimpleNamespace(),
     )
+
+
+class FakeConfigQuery:
+    def __init__(self, response):
+        self.response = response
+        self.calls = []
+
+    def select(self, fields):
+        self.calls.append(("select", fields))
+        return self
+
+    def eq(self, key, value):
+        self.calls.append(("eq", key, value))
+        return self
+
+    def limit(self, count):
+        self.calls.append(("limit", count))
+        return self
+
+    def execute(self):
+        self.calls.append(("execute",))
+        return self.response
+
+
+class FakeConfigClient:
+    def __init__(self, response):
+        self.query = FakeConfigQuery(response)
+
+    def table(self, name):
+        assert name == "ordelo_config"
+        return self.query
+
+
+def test_get_overwatch_list_parses_comma_separated_config(ordelo_module):
+    database_client = FakeConfigClient(
+        {"data": [{"config_value": " 447000000001, ,+447000000002 ,"}]}
+    )
+    svc = ordelo_module.OrdeloService(
+        rest_ref="ELAS", database_client=database_client
+    )
+
+    assert svc.get_overwatch_list() == ["447000000001", "+447000000002"]
+    assert database_client.query.calls == [
+        ("select", "config_value"),
+        ("eq", "config_key", "overwatch_list"),
+        ("limit", 1),
+        ("execute",),
+    ]
+
+
+def test_get_overwatch_list_requires_config(ordelo_module):
+    svc = ordelo_module.OrdeloService(
+        rest_ref="ELAS", database_client=FakeConfigClient({"data": []})
+    )
+
+    with pytest.raises(
+        ValueError, match="No config found for overwatch_list in ordelo_config"
+    ):
+        svc.get_overwatch_list()
 
 
 @pytest.mark.asyncio
