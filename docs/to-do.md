@@ -56,3 +56,11 @@ are complete. The following work is intentionally deferred.
 
 The detailed rationale and source references remain in
 `docs/architecture/shared-agent-runtime-decisions.md`.
+
+
+/order-event-hooks.py/takeaway_pickup_time_updated
+I need to update retian_thread to false after this;
+    first_state_update_dict = {
+        "active_agent": "takeaway_agent",
+        "order_number": summary.order_number,
+    }
