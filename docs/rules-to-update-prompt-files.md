@@ -77,7 +77,7 @@ the standard menu into a callback registry.
 
 ### 3. General queries stay in triage
 
-Complaints, parking, contact details, events, and similar non-ordering questions
+Feedback, parking, contact details, events, and similar non-ordering questions
 remain in triage unless the customer explicitly requests a specialized service.
 
 ### 4. Inquiry selection stays in triage

@@ -17,7 +17,7 @@ evidence, not proof that the intended code revision handled the event.
    numbers, message payloads containing personal data, or secret-bearing URLs.
 3. Obtain explicit authorization before actions with business effects. A normal
    greeting or `/reset` is low-risk only in an owner-approved test chat; orders,
-   payments, reservations, consent writes, and test complaints that notify real
+   payments, reservations, consent writes, and test feedback submissions that notify real
    administrators need specific approval at the time of the action.
 4. Choose the evidence source:
 

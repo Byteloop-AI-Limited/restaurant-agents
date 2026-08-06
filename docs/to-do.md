@@ -23,8 +23,8 @@ are complete. The following work is intentionally deferred.
   actual RestaurantMaster end times. New delivery and takeaway orders end 15
   minutes before each configured service interval automatically.
 - [ ] Add service authentication, persistence/retry, and delivery observability
-  for the Ordelo complaint hook before exposing it outside the trusted internal
-  boundary.
+  for the Ordelo feedback hook (`/customer-hooks/restaurant-feedback`) before
+  exposing it outside the trusted internal boundary.
 
 ## Non-blocking shared-runtime cleanup
 

@@ -124,7 +124,7 @@ existing `GraphAdapterFactory` callable.
 2. `ask_user_to_select_service`
 3. `ask_user_to_select_enquiry`
 4. `capture_marketing_consent`
-5. `submit_restaurant_complaint`
+5. `submit_restaurant_feedback`
 6. `terminate_conversation`
 7. `transfer_to_delivery`
 8. `transfer_to_takeaway`

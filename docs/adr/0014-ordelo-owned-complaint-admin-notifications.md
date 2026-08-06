@@ -1,8 +1,14 @@
 # 0014 Ordelo-owned complaint admin notifications
 
-- Status: Accepted
+- Status: Superseded by ADR-0017
 - Date: 2026-08-03
 - Owners: Restaurant platform owner
+
+ADR-0017 supersedes this decision, renaming "complaint" to "feedback"
+throughout the customer-facing and internal surface and widening the intended
+scope to any sentiment (praise, suggestions, or problems), not only problems.
+The underlying Ordelo-owned notification mechanism described below is
+otherwise unchanged.
 
 ## Decision
 

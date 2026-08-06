@@ -147,7 +147,7 @@ context. Events report something that has already happened.
 - External payment and fulfilment contexts are authoritative over their state.
 - Marketing consent is scoped to Customer plus Restaurant.
 - RestaurantMaster venue hours govern enquiries; new delivery/takeaway flow entry and menu sends close 15 minutes before each service interval ends.
-- Complaint administration is owned by Ordelo: restaurant apps submit validated complaints but do not read or message administrators directly.
+- Feedback administration is owned by Ordelo: restaurant apps submit validated feedback but do not read or message administrators directly.
 - Complete prompts are app-owned.
 - Settings are loaded once at explicit application composition; configuration
   model imports do not fetch secrets or publish process-global clients.

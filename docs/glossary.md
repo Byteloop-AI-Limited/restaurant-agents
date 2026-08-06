@@ -242,12 +242,12 @@ exercise the complete restaurant-agent flow outside venue hours and per-service
 new-order cutoffs. It is a bounded verification bypass, not a customer
 entitlement; an unreadable list fails closed.
 
-### Restaurant Complaint
+### Restaurant Feedback
 
-An ephemeral customer report containing customer context, optional order
-reference, and concise description. Ordelo validates the restaurant and
-schedules notifications to its current administrators; it is not persisted by
-the WhatsApp app.
+An ephemeral customer report of any sentiment — praise, a suggestion, or a
+problem — containing customer context, optional order reference, and concise
+description. Ordelo validates the restaurant and schedules notifications to
+its current administrators; it is not persisted by the WhatsApp app.
 
 ### Admin Notification Scheduled
 

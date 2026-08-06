@@ -101,7 +101,7 @@ copy restaurant facts into shared defaults. RestaurantMaster venue hours remain
 the open/closed authority. Per-service order cutoffs are separate operational
 fields and block only new-order agent flows, stale service selections, handoffs,
 and new menu-link sends; existing order, payment, and status support remains
-available. Restaurant-admin complaint notifications cross the Ordelo boundary;
+available. Restaurant-admin feedback notifications cross the Ordelo boundary;
 a restaurant WhatsApp runtime must not contact `admins` directly.
 
 The app factory must:
