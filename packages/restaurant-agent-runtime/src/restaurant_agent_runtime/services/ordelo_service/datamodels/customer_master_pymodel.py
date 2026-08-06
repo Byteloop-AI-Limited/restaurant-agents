@@ -140,8 +140,8 @@ class UpdateCustRestMapRequest(BaseModel):
     consent_dtts: Optional[datetime.datetime] = None
 
 
-class RestaurantComplaintRequest(BaseModel):
-    """Validated, ephemeral customer complaint submitted to Ordelo."""
+class RestaurantFeedbackRequest(BaseModel):
+    """Validated, ephemeral customer feedback submitted to Ordelo."""
 
     rest_ref: str = Field(..., min_length=1, max_length=32)
     cust_id: str = Field(..., min_length=3, max_length=32)

@@ -39,6 +39,12 @@ class OperationalLookupCache:
     This cache deliberately excludes transactional order, delivery, customer, and
     thread data. Failed and missing lookups are never cached, so a repair to the
     source of truth takes effect on the next request (or after an explicit reset).
+
+    ``accepts_new_order`` and ``is_open`` are also the single recipient-aware
+    policy surface for the Overwatch bypass: they decide, not just look up,
+    whether a recipient is treated as though the venue were inside its current
+    service interval. New "is X allowed for this recipient" questions belong
+    here rather than being re-derived at each call site.
     """
 
     def __init__(
@@ -70,72 +76,72 @@ class OperationalLookupCache:
     def get_app_url(self, app_ref: str) -> str:
         """Return the configured application URL for this restaurant or Ordelo."""
         normalized_app_ref = self._normalize_app_ref(app_ref)
-        entry = self._app_urls.get(normalized_app_ref)
-        if entry is not None and entry.expires_at > self._clock():
-            return entry.value
 
-        with self._lock_for("app_url", normalized_app_ref):
-            entry = self._app_urls.get(normalized_app_ref)
-            if entry is not None and entry.expires_at > self._clock():
-                return entry.value
-
+        def _load() -> str:
             config_key = f"{normalized_app_ref}_APP_URL"
             value = self._read_config_value(config_key)
             if not isinstance(value, str) or not value.strip():
                 raise ValueError(f"No config found for {config_key} in ordelo_config")
-            self._app_urls[normalized_app_ref] = _CacheEntry(
-                value=value.strip(),
-                expires_at=self._clock() + self._app_url_ttl_seconds,
-            )
             return value.strip()
+
+        return self._cached(
+            category="app_url",
+            key=normalized_app_ref,
+            get=lambda: self._app_urls.get(normalized_app_ref),
+            set=lambda entry: self._app_urls.__setitem__(normalized_app_ref, entry),
+            ttl=self._app_url_ttl_seconds,
+            loader=_load,
+        )
 
     def get_restaurant_master(self) -> RestaurantMaster:
         """Return the current runtime restaurant's cached ``RestaurantMaster``."""
-        entry = self._restaurant_master
-        if entry is not None and entry.expires_at > self._clock():
-            return entry.value
 
-        with self._lock_for("restaurant_master", self._rest_ref):
-            entry = self._restaurant_master
-            if entry is not None and entry.expires_at > self._clock():
-                return entry.value
+        def _load() -> RestaurantMaster:
             from restaurant_agent_runtime.services.ordelo_service.datamodels.restaurant_master_pymodel import (
                 RestaurantMaster,
             )
 
-            restaurant_master = RestaurantMaster.from_rest_ref(
+            return RestaurantMaster.from_rest_ref(
                 self._rest_ref,
                 database_client=self._database_client,
             )
-            self._restaurant_master = _CacheEntry(
-                value=restaurant_master,
-                expires_at=self._clock() + self._restaurant_master_ttl_seconds,
-            )
-            return restaurant_master
+
+        def _set(entry: _CacheEntry[RestaurantMaster]) -> None:
+            self._restaurant_master = entry
+
+        return self._cached(
+            category="restaurant_master",
+            key=self._rest_ref,
+            get=lambda: self._restaurant_master,
+            set=_set,
+            ttl=self._restaurant_master_ttl_seconds,
+            loader=_load,
+        )
 
     def get_overwatch_recipients(self) -> frozenset[str]:
         """Return normalized recipients from the ``overwatch_list`` config value."""
-        entry = self._overwatch
-        if entry is not None and entry.expires_at > self._clock():
-            return entry.value
 
-        with self._lock_for("overwatch", self._rest_ref):
-            entry = self._overwatch
-            if entry is not None and entry.expires_at > self._clock():
-                return entry.value
+        def _load() -> frozenset[str]:
             value = self._read_config_value("overwatch_list")
             if not isinstance(value, str):
                 raise ValueError("No config found for overwatch_list in ordelo_config")
-            recipients = frozenset(
+            return frozenset(
                 recipient.strip().lstrip("+")
                 for recipient in value.split(",")
                 if recipient.strip().lstrip("+")
             )
-            self._overwatch = _CacheEntry(
-                value=recipients,
-                expires_at=self._clock() + self._overwatch_ttl_seconds,
-            )
-            return recipients
+
+        def _set(entry: _CacheEntry[frozenset[str]]) -> None:
+            self._overwatch = entry
+
+        return self._cached(
+            category="overwatch",
+            key=self._rest_ref,
+            get=lambda: self._overwatch,
+            set=_set,
+            ttl=self._overwatch_ttl_seconds,
+            loader=_load,
+        )
 
     def is_overwatch_recipient(self, recipient: str | None) -> bool:
         """Return false if the source cannot be read; privileged access fails closed."""
@@ -203,6 +209,30 @@ class OperationalLookupCache:
         if normalized not in {self._rest_ref, "ORDELO", "RESTAURANT_MENU"}:
             raise ValueError(f"Unsupported application reference: {app_ref}")
         return normalized
+
+    def _cached(
+        self,
+        *,
+        category: str,
+        key: str,
+        get: Callable[[], _CacheEntry[T] | None],
+        set: Callable[[_CacheEntry[T]], None],
+        ttl: float,
+        loader: Callable[[], T],
+    ) -> T:
+        """Shared double-checked-lock TTL read used by every cached lookup."""
+        entry = get()
+        if entry is not None and entry.expires_at > self._clock():
+            return entry.value
+
+        with self._lock_for(category, key):
+            entry = get()
+            if entry is not None and entry.expires_at > self._clock():
+                return entry.value
+
+            value = loader()
+            set(_CacheEntry(value=value, expires_at=self._clock() + ttl))
+            return value
 
     def _lock_for(self, category: str, key: str) -> Lock:
         lock_key = (category, key)

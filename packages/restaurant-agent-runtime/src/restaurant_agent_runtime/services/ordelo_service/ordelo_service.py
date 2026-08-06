@@ -30,7 +30,7 @@ from restaurant_agent_runtime.services.ordelo_service.datamodels.customer_master
     CreateOrUpdateCustomerRequest,
     UpdateAddressRequest,
     UpdateCustRestMapRequest,
-    RestaurantComplaintRequest,
+    RestaurantFeedbackRequest,
 )
 from restaurant_agent_runtime.services.ordelo_service.datamodels.cust_rest_map_pymodel import CustRestMap
 
@@ -124,12 +124,12 @@ class OrdeloService(BaseModel):
                 )
                 return None
 
-    async def submit_restaurant_complaint(
-        self, request: RestaurantComplaintRequest
+    async def submit_restaurant_feedback(
+        self, request: RestaurantFeedbackRequest
     ) -> Optional[dict]:
-        """Ask Ordelo to schedule restaurant-admin complaint notifications."""
+        """Ask Ordelo to schedule restaurant-admin feedback notifications."""
         base_url = await self._get_base_url()
-        url = f"{base_url}/customer-hooks/restaurant-complaints"
+        url = f"{base_url}/customer-hooks/restaurant-feedback"
         async with httpx.AsyncClient() as client:
             try:
                 response = await client.post(
@@ -139,7 +139,7 @@ class OrdeloService(BaseModel):
                 return response.json()
             except httpx.HTTPError as exc:
                 logger.error(
-                    "Could not schedule restaurant complaint for {}: {}",
+                    "Could not schedule restaurant feedback for {}: {}",
                     request.rest_ref,
                     exc,
                 )

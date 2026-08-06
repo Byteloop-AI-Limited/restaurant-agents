@@ -36,7 +36,7 @@ from restaurant_agent_runtime.services.ordelo_service.ordelo_service import Orde
 
 _ENQUIRY_OPTION_MESSAGES = frozenset(
     {
-        "I want to make a customer complaint",
+        "I want to share feedback",
         "I want to know about parking availability",
         "I want to subscribe for offers",
     }

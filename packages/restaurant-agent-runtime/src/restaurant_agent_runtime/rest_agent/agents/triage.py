@@ -2,7 +2,7 @@
 """Triage agent for onboarding, specialist routing, and conversation termination.
   . Handles service intent classification for a single configured restaurant
   . Routes to specialist agents (delivery, takeaway) on explicit intent
-  . Answers general queries (parking, complaints, contact info) directly
+  . Answers general queries (parking, feedback, contact info) directly
   . Owns terminate_conversation — the only agent that can end sessions
   . Manages marketing consent capture before termination
 Functions/Classes:
@@ -10,6 +10,7 @@ Functions/Classes:
   . send_welcome_message
   . ask_user_to_select_service
   . capture_marketing_consent
+  . submit_restaurant_feedback
   . terminate_conversation
 """
 
@@ -39,7 +40,7 @@ from restaurant_agent_runtime.rest_agent.agent_wa_senders import (
 )
 from restaurant_agent_runtime.rest_agent.prompt_runtime import render_prompt_middleware
 from restaurant_agent_runtime.services.ordelo_service.datamodels.customer_master_pymodel import (
-    RestaurantComplaintRequest,
+    RestaurantFeedbackRequest,
 )
 from restaurant_agent_runtime.services.ordelo_service.ordelo_service import OrdeloService
 from restaurant_agent_runtime.services.ordelo_service.datamodels.cust_rest_map_pymodel import (
@@ -241,21 +242,21 @@ async def capture_marketing_consent(
 
 
 @tool
-async def submit_restaurant_complaint(
+async def submit_restaurant_feedback(
     description: str,
     order_reference: str | None,
     state: Annotated[dict, InjectedState],
     tool_call_id: Annotated[str, InjectedToolCallId],
     runtime: ToolRuntime[ContextSchema],
 ):
-    """Schedule a restaurant-admin complaint notification through Ordelo."""
+    """Schedule a restaurant-admin feedback notification through Ordelo."""
     ctx = runtime.context
     result = await OrdeloService(
         rest_ref=ctx.rest_ref,
         database_client=ctx.client_ordelo,
         operational_lookups=ctx.operational_lookups,
-    ).submit_restaurant_complaint(
-        RestaurantComplaintRequest(
+    ).submit_restaurant_feedback(
+        RestaurantFeedbackRequest(
             rest_ref=ctx.rest_ref,
             cust_id=ctx.recipient,
             cust_name=state.get("wa_name"),
@@ -268,7 +269,7 @@ async def submit_restaurant_complaint(
             update={
                 "messages": [
                     ToolMessage(
-                        "Complaint could not be scheduled. Ask the customer to call the restaurant.",
+                        "Feedback could not be scheduled. Ask the customer to call the restaurant.",
                         tool_call_id=tool_call_id,
                     )
                 ]
@@ -279,10 +280,10 @@ async def submit_restaurant_complaint(
         update={
             "messages": [
                 ToolMessage(
-                    "Complaint submitted to Ordelo for restaurant-admin notification.",
+                    "Feedback submitted to Ordelo for restaurant-admin notification.",
                     tool_call_id=tool_call_id,
                 ),
-                AIMessage("I've passed your complaint to the restaurant team."),
+                AIMessage("I've passed your feedback to the restaurant team."),
             ]
         },
     )
@@ -347,7 +348,7 @@ triage_tools = [
     ask_user_to_select_service,
     ask_user_to_select_enquiry,
     capture_marketing_consent,
-    submit_restaurant_complaint,
+    submit_restaurant_feedback,
     terminate_conversation,
     transfer_to_delivery,
     transfer_to_takeaway,

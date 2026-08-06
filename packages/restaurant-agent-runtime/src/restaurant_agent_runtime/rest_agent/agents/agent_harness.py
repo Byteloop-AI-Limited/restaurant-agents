@@ -420,7 +420,7 @@ def transfer_to_triage(
     """Transfer the conversation back to the triage agent.
 
     Use this tool when the customer's request is outside this agent's scope:
-    complaints, general queries (parking, events, catering, contact info),
+    feedback, general queries (parking, events, catering, contact info),
     restaurant switch, ending/restarting the conversation, or when a system
     message instructs to terminate the conversation.
     """
