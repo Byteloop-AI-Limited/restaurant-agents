@@ -6,8 +6,6 @@ from importlib import import_module
 from restaurant_agent_runtime.config.bundle import load_settings_bundle
 
 APP = "bnat"
-CALLBACK_URL = "https://rest-agent-test.ordelo.app/"
-
 identity_modules = {
     "bnat": "bnat_agent.identity",
     "sfcs": "sfcs_agent.identity",
@@ -37,6 +35,10 @@ business_phone_number = wa_client.get_business_phone_number(
 
 
 # %% Update the WABA-level callback. Executing this cell changes live Meta state.
+CALLBACK_URL = "https://rest-agent-test.ordelo.app/"
+# CALLBACK_URL = "https://bnat-agent.fly.dev/"
+
+
 update_result = wa_client.override_waba_callback_url(
     callback_url=CALLBACK_URL,
     verify_token=waba_business_settings.waa_verify_token,

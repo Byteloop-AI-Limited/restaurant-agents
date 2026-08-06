@@ -14,7 +14,9 @@ select * from rider_master where is_in_shift = true;
 
 update restaurant_master
 -- set admins = Array['447919202938', '447448440754'],
-set admins = Array['447919202938'],
+-- +44 7936 359321 - azz
+-- 447932085625 - bab
+set admins = Array['447919202938', '447932085625', '447936359321'],
     rest_stale_active_threads_minutes = 10,
     city='dummy',
     service_hours_json = '{
@@ -34,10 +36,18 @@ update ordelo_config set config_value = 'https://rest-agent-test.ordelo.app' whe
 SELECT * FROM ordelo_post('BNAT_APP_URL', '/restaurant-base-url-cache/reset');
 SELECT * FROM ordelo_post('BNAT_APP_URL', '/restaurant-master-cache/reset');
 
+
 update rider_master
 set is_in_shift = true,
-    town = 'Orpington',
-    vehicle_type = 'scooter'
+    town = 'dummy',
+    vehicle_type = 'car'
+where rider_name = 'Rahul';
+
+
+update rider_master
+set is_in_shift = true,
+    town = 'dummy',
+    vehicle_type = 'car'
 where rider_name = 'Lohith';
 
 update rider_master
@@ -77,9 +87,9 @@ set admins = Array[ '447446933210','447919202938','447827180109', '447769081769'
   "sat": [["11:30", "14:00"], ["16:00", "24:00"]],
   "sun": [["11:30", "14:00"], ["16:00", "23:00"]]
 }'::jsonb
-where rest_ref = 'SFCS';
+where rest_ref = 'BNAT';
 
-update ordelo_config set config_value = 'https://sfcs-agg.ordelo.app' where config_key = 'SFCS_APP_URL';
+update ordelo_config set config_value = 'https://bnat-agent.fly.dev' where config_key = 'BNAT_APP_URL';
 
 update rider_master
 set is_in_shift = true,
@@ -96,5 +106,5 @@ where rider_name = 'Bloop';
 
 
 -- Cache reset calls, Should be run everytime after changing the app URL
-SELECT * FROM ordelo_post('SFCS_APP_URL', '/restaurant-base-url-cache/reset');
-SELECT * FROM ordelo_post('SFCS_APP_URL', '/restaurant-master-cache/reset');
+SELECT * FROM ordelo_post('BNAT_APP_URL', '/restaurant-base-url-cache/reset');
+SELECT * FROM ordelo_post('BNAT_APP_URL', '/restaurant-master-cache/reset');
