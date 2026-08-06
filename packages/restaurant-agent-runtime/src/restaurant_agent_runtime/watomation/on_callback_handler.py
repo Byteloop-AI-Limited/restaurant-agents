@@ -22,7 +22,6 @@ import httpx
 from pywa_async import WhatsApp
 
 from restaurant_agent_runtime.config import logger
-from restaurant_agent_runtime.services.tz_utils import UK_TZ
 from restaurant_agent_runtime.runtime import GraphAdapter, RestaurantRuntime
 from restaurant_agent_runtime.watomation.dedup import wa_dedup
 
@@ -199,24 +198,20 @@ async def select_service_handler(
         "delivery_agent": "delivery",
         "takeaway_agent": "takeaway",
     }.get(active_agent)
-    if order_type is not None:
-        master = runtime.operational_lookups.get_restaurant_master()
-        if not runtime.operational_lookups.is_overwatch_recipient(
-            recipient
-        ) and not master.accepts_new_order(
-            order_type, datetime.now(UK_TZ)
-        ):
-            await wa.send_message(
-                to=recipient,
-                text="Sorry, new orders for that service have closed for today. You can still send us an enquiry.",
-            )
-            await select_service_sender(
-                recipient=recipient,
-                wa_client=wa,
-                rest_ref=rest_ref,
-                runtime=runtime,
-            )
-            return
+    if order_type is not None and not runtime.operational_lookups.accepts_new_order(
+        order_type, recipient
+    ):
+        await wa.send_message(
+            to=recipient,
+            text="Sorry, new orders for that service have closed for today. You can still send us an enquiry.",
+        )
+        await select_service_sender(
+            recipient=recipient,
+            wa_client=wa,
+            rest_ref=rest_ref,
+            operational_lookups=runtime.operational_lookups,
+        )
+        return
 
     if rest_ref and active_agent:
         human_msg = callback_data.human_msg
@@ -239,6 +234,7 @@ async def select_service_handler(
             recipient=recipient,
             wa_client=wa,
             rest_ref=rest_ref,
+            operational_lookups=runtime.operational_lookups,
         )
         return
 

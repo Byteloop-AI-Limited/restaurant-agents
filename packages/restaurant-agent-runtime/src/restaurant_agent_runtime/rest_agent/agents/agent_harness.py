@@ -24,7 +24,6 @@ This module should have NO imports from other agent modules to avoid circular im
 """
 
 import re
-from datetime import datetime
 from typing import Annotated, Any, Literal, Sequence
 
 from langchain.agents.middleware import after_agent, before_model
@@ -54,7 +53,6 @@ from restaurant_agent_runtime.services.ordelo_service.datamodels.restaurant_mast
 from restaurant_agent_runtime.services.operational_lookup_cache import (
     OperationalLookupCache,
 )
-from restaurant_agent_runtime.services.tz_utils import UK_TZ
 from restaurant_agent_runtime.runtime import EnquiryMenu
 
 
@@ -172,11 +170,7 @@ async def _send_menu_tool(
     from restaurant_agent_runtime.rest_agent.agent_wa_senders import send_restaurant_menu
 
     ctx = runtime.context
-    if not ctx.operational_lookups.is_overwatch_recipient(
-        ctx.recipient
-    ) and not ctx.restaurant_master.accepts_new_order(
-        order_type, datetime.now(UK_TZ)
-    ):
+    if not ctx.operational_lookups.accepts_new_order(order_type, ctx.recipient):
         await ctx.wa_client.send_message(
             to=ctx.recipient,
             text="Sorry, new orders for that service have closed for today. You can still send us an enquiry.",
@@ -290,10 +284,8 @@ def transfer_to_delivery(
     """
     if (guard := _run_transfer_guards(runtime.state, runtime.tool_call_id)) is not None:
         return guard
-    if not runtime.context.operational_lookups.is_overwatch_recipient(
-        runtime.context.recipient
-    ) and not runtime.context.restaurant_master.accepts_new_order(
-        "delivery", datetime.now(UK_TZ)
+    if not runtime.context.operational_lookups.accepts_new_order(
+        "delivery", runtime.context.recipient
     ):
         return Command(
             update={
@@ -370,10 +362,8 @@ def transfer_to_takeaway(
     """
     if (guard := _run_transfer_guards(state, runtime.tool_call_id)) is not None:
         return guard
-    if not runtime.context.operational_lookups.is_overwatch_recipient(
-        runtime.context.recipient
-    ) and not runtime.context.restaurant_master.accepts_new_order(
-        "takeaway", datetime.now(UK_TZ)
+    if not runtime.context.operational_lookups.accepts_new_order(
+        "takeaway", runtime.context.recipient
     ):
         return Command(
             update={

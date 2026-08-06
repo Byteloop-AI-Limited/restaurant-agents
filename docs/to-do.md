@@ -28,6 +28,28 @@ are complete. The following work is intentionally deferred.
 
 ## Non-blocking shared-runtime cleanup
 
+- [ ] `select_service_wa_send`'s Overwatch bypass was dead code: the two live
+  `triage.py` call sites passed `restaurant_master=` but never `runtime=`, so
+  an Overwatch tester messaging outside service hours saw only the Enquiry
+  button. Fixed by moving the recipient-aware decision onto
+  `OperationalLookupCache.accepts_new_order`/`.is_open` and making the sender's
+  `operational_lookups` argument required, so a missing argument now raises
+  instead of silently rendering the wrong menu. `tests/legacy_contract/rest_agent/test_agent_wa_senders.py`
+  predates this gating and calls the sender positionally; it is excluded by
+  `norecursedirs` and was intentionally left unchanged rather than kept in
+  sync with a signature it does not exercise.
+- [ ] The service-selection resend at the tail of `select_service_handler`
+  (`rest_ref and not active_agent`) previously called the sender with no
+  availability information at all, so every recipient saw an unfiltered
+  Delivery/Takeaway/Enquiry menu on that specific callback path regardless of
+  service hours. Now passes `operational_lookups` like every other gate;
+  confirm this tightened behavior against the owner's expectation for that
+  callback path in production.
+- [ ] Gate checks now read `operational_lookups.get_restaurant_master()`
+  freshly per call instead of reusing the `ContextSchema.restaurant_master`
+  snapshot taken at the start of one graph invocation. Both come from the same
+  5-minute TTL cache entry, so this is a marginal freshness change within a
+  single invocation, not a new external read.
 - [ ] Consider compiling the graph once only after measuring a concrete benefit
   and designing the asynchronous lifecycle and checkpointer behavior. Do not
   add speculative caches or locks.

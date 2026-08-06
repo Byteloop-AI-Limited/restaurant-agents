@@ -5,10 +5,13 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 from threading import Lock
 from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar
 
 from loguru import logger
+
+from restaurant_agent_runtime.services.tz_utils import UK_TZ
 
 if TYPE_CHECKING:
     from restaurant_agent_runtime.services.ordelo_service.datamodels.restaurant_master_pymodel import (
@@ -143,6 +146,32 @@ class OperationalLookupCache:
         except Exception:
             logger.exception("Could not read the Overwatch recipient allowlist")
             return False
+
+    def accepts_new_order(
+        self,
+        order_type: str,
+        recipient: str | None,
+        at: datetime | None = None,
+    ) -> bool:
+        """Return whether a new order can start now for this recipient.
+
+        Overwatch recipients exercise the complete flow as though the current
+        moment were inside the active service interval.
+        """
+        if self.is_overwatch_recipient(recipient):
+            return True
+        return self.get_restaurant_master().accepts_new_order(
+            order_type, at or datetime.now(UK_TZ)
+        )
+
+    def is_open(self, recipient: str | None, at: datetime) -> bool:
+        """Return whether the venue is open for this recipient at ``at``.
+
+        Overwatch recipients are never treated as outside service hours.
+        """
+        if self.is_overwatch_recipient(recipient):
+            return True
+        return self.get_restaurant_master().service_hours.is_open(at)
 
     def reset(
         self,

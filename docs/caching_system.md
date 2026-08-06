@@ -33,6 +33,23 @@ is_operator = runtime.operational_lookups.is_overwatch_recipient(recipient)
 Do not introduce module-global caches or instantiate a second cache inside a
 handler or service.
 
+### Recipient-aware availability
+
+`accepts_new_order(order_type, recipient, at=None)` and `is_open(recipient, at)`
+are the single decision point for "can this recipient use the service right
+now?". Both return `True` unconditionally for an Overwatch recipient and
+otherwise delegate to the cached `RestaurantMaster`/`WeeklySchedule`. Every
+service-button, transfer, menu-send, and out-of-hours gate calls one of these
+two methods so an Overwatch recipient exercises the complete flow as if the
+venue were inside its service interval — do not re-implement the
+`is_overwatch_recipient(...) or ...accepts_new_order(...)` check inline at a
+new call site.
+
+```python
+can_deliver = runtime.operational_lookups.accepts_new_order("delivery", recipient)
+is_open_now = runtime.operational_lookups.is_open(recipient, datetime.now(UK_TZ))
+```
+
 ## Reset endpoint
 
 `POST /internal/cache/reset` clears entries in the current process only. It is

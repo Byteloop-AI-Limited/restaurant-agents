@@ -157,7 +157,11 @@ lists. App tests own prompt presence and exact runtime/client composition.
 
 Owner-approved Overwatch recipients bypass venue-hours and new-order-cutoff
 guards across service selection, transfers, and menu sends, so an end-to-end
-test can run at any time. This bypass is restricted to the shared allow-list.
+test can run at any time. This bypass is restricted to the shared allow-list
+and is implemented once, as `OperationalLookupCache.accepts_new_order` and
+`.is_open` (see [Operational Lookup Cache](caching_system.md)); every gate
+calls one of these two methods rather than re-checking
+`is_overwatch_recipient` inline.
 
 ## Customization Contract
 

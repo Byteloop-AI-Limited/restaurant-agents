@@ -57,15 +57,11 @@ def _message_time_uk(msg: Message) -> datetime | None:
 def is_outside_service_hours(
     _: WhatsApp, msg: Message, runtime: RestaurantRuntime
 ) -> bool:
-    if runtime.operational_lookups.is_overwatch_recipient(msg.sender):
-        return False
-
     msg_time = _message_time_uk(msg)
     if msg_time is None:
         return False
 
-    schedule = runtime.operational_lookups.get_restaurant_master().service_hours
-    return not schedule.is_open(msg_time)
+    return not runtime.operational_lookups.is_open(msg.sender, msg_time)
 
 
 def create_out_of_hours_filter(runtime: RestaurantRuntime):

@@ -1,14 +1,15 @@
 """WhatsApp senders used by the standard Restaurant Agent graph."""
 
 from typing import Literal
-from datetime import datetime
 
 from pydantic import BaseModel
 from pywa.types import Button, ButtonUrl
 from pywa_async import WhatsApp
 
-from restaurant_agent_runtime.runtime import EnquiryMenu, RestaurantRuntime
-from restaurant_agent_runtime.services.tz_utils import UK_TZ
+from restaurant_agent_runtime.runtime import EnquiryMenu
+from restaurant_agent_runtime.services.operational_lookup_cache import (
+    OperationalLookupCache,
+)
 
 class CallbackButtonData(BaseModel):
     model_config = {"frozen": True, "extra": "allow"}
@@ -41,8 +42,7 @@ async def select_service_wa_send(
     wa_client: WhatsApp,
     rest_ref: str,
     *,
-    runtime: RestaurantRuntime | None = None,
-    restaurant_master=None,
+    operational_lookups: OperationalLookupCache,
     delivery_button_label: str = "Delivery",
     takeaway_button_label: str = "Takeaway",
 ) -> None:
@@ -53,14 +53,12 @@ async def select_service_wa_send(
         recipient: Customer phone number
         wa_client: WhatsApp client instance
         rest_ref: Configured restaurant ID slug
+        operational_lookups: Required availability source; determines which
+            service buttons this recipient can see right now (Overwatch
+            recipients always see every button).
     """
     normalized_rest_ref = str(rest_ref).lower()
     selection_text = "How can I help you today?"
-
-    if runtime is not None:
-        restaurant_master = restaurant_master or runtime.operational_lookups.get_restaurant_master()
-        delivery_button_label = runtime.presentation.delivery_button_label
-        takeaway_button_label = runtime.presentation.takeaway_button_label
 
     takeaway = CallbackButtonData(
         action="/SelectService",
@@ -81,18 +79,9 @@ async def select_service_wa_send(
         human_msg="I have an enquiry",
     )
     buttons = []
-    now = datetime.now(UK_TZ)
-    if (
-        restaurant_master is None
-        or (runtime is not None and runtime.operational_lookups.is_overwatch_recipient(recipient))
-        or restaurant_master.accepts_new_order("delivery", now)
-    ):
+    if operational_lookups.accepts_new_order("delivery", recipient):
         buttons.append(Button(title=delivery_button_label, callback_data=delivery.model_dump_json()))
-    if (
-        restaurant_master is None
-        or (runtime is not None and runtime.operational_lookups.is_overwatch_recipient(recipient))
-        or restaurant_master.accepts_new_order("takeaway", now)
-    ):
+    if operational_lookups.accepts_new_order("takeaway", recipient):
         buttons.append(Button(title=takeaway_button_label, callback_data=takeaway.model_dump_json()))
     buttons.append(Button(title="Enquiry", callback_data=inquiry.model_dump_json()))
     await wa_client.send_message(

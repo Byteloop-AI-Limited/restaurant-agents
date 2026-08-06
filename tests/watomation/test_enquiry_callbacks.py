@@ -142,6 +142,96 @@ def test_enquiry_menu_rejects_more_than_whatsapp_allows():
         )
 
 
+class FakeOperationalLookups:
+    """Minimal double mirroring OperationalLookupCache.accepts_new_order."""
+
+    def __init__(self, *, delivery_open=True, takeaway_open=True, overwatch_recipients=()):
+        self.delivery_open = delivery_open
+        self.takeaway_open = takeaway_open
+        self.overwatch_recipients = set(overwatch_recipients)
+
+    def accepts_new_order(self, order_type, recipient):
+        if recipient in self.overwatch_recipients:
+            return True
+        return self.delivery_open if order_type == "delivery" else self.takeaway_open
+
+
+@pytest.mark.asyncio
+async def test_closed_service_resend_passes_operational_lookups_to_the_sender():
+    """The order-cutoff resend must let an Overwatch recipient through too."""
+    ops = FakeOperationalLookups(delivery_open=False)
+    graph_adapter = SimpleNamespace(run_rest_graph_with_custom_msg=AsyncMock())
+    runtime = SimpleNamespace(
+        identity=SimpleNamespace(rest_ref="BNAT"),
+        operational_lookups=ops,
+    )
+    select_service_sender = AsyncMock()
+    callback = _callback(
+        callback_id="closed-service",
+        data={
+            "action": "/SelectService",
+            "rest_ref": "bnat",
+            "active_agent": "delivery_agent",
+            "human_msg": "I want delivery",
+        },
+    )
+    wa = SimpleNamespace(send_message=AsyncMock())
+
+    await on_callback_handler.select_service_handler(
+        wa,
+        callback,
+        callback_data_type=CallbackButtonData,
+        graph_adapter=graph_adapter,
+        runtime=runtime,
+        select_service_sender=select_service_sender,
+    )
+
+    select_service_sender.assert_awaited_once_with(
+        recipient="447000000001",
+        wa_client=wa,
+        rest_ref="bnat",
+        operational_lookups=ops,
+    )
+    graph_adapter.run_rest_graph_with_custom_msg.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_no_active_agent_resend_passes_operational_lookups_to_the_sender():
+    """This resend used to fail open with no availability information at all."""
+    ops = FakeOperationalLookups(delivery_open=False, takeaway_open=False)
+    graph_adapter = SimpleNamespace(run_rest_graph_with_custom_msg=AsyncMock())
+    runtime = SimpleNamespace(
+        identity=SimpleNamespace(rest_ref="BNAT"),
+        operational_lookups=ops,
+    )
+    select_service_sender = AsyncMock()
+    callback = _callback(
+        callback_id="no-active-agent",
+        data={
+            "action": "/SelectService",
+            "rest_ref": "bnat",
+            "human_msg": "hi",
+        },
+    )
+
+    await on_callback_handler.select_service_handler(
+        SimpleNamespace(),
+        callback,
+        callback_data_type=CallbackButtonData,
+        graph_adapter=graph_adapter,
+        runtime=runtime,
+        select_service_sender=select_service_sender,
+    )
+
+    select_service_sender.assert_awaited_once_with(
+        recipient="447000000001",
+        wa_client=ANY,
+        rest_ref="bnat",
+        operational_lookups=ops,
+    )
+    graph_adapter.run_rest_graph_with_custom_msg.assert_not_awaited()
+
+
 @pytest.mark.asyncio
 async def test_legacy_specific_enquiry_callback_runs_triage_directly():
     graph_adapter = SimpleNamespace(run_rest_graph_with_custom_msg=AsyncMock())

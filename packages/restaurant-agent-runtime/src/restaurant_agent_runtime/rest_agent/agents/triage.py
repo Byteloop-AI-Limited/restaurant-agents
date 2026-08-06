@@ -75,7 +75,7 @@ async def send_welcome_message(
         recipient=recipient,
         wa_client=ctx.wa_client,
         rest_ref=rest_ref,
-        restaurant_master=ctx.restaurant_master,
+        operational_lookups=ctx.operational_lookups,
         delivery_button_label=ctx.delivery_button_label,
         takeaway_button_label=ctx.takeaway_button_label,
     )
@@ -135,7 +135,7 @@ async def ask_user_to_select_service(
         recipient=recipient,
         wa_client=ctx.wa_client,
         rest_ref=rest_ref,
-        restaurant_master=ctx.restaurant_master,
+        operational_lookups=ctx.operational_lookups,
         delivery_button_label=ctx.delivery_button_label,
         takeaway_button_label=ctx.takeaway_button_label,
     )

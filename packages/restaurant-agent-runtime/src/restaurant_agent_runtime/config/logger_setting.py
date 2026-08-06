@@ -5,7 +5,8 @@ Logger configuration using loguru.
     interactive terminals and omitted for log collectors.
   . Set LOG_FORMAT=json when a structured JSON sink is required.
   . Set LOG_COLORIZE=true to force ANSI colour when a terminal viewer supports it.
-  . Set UVICORN_ACCESS_LOG=true to restore successful inbound request lines.
+  . Successful inbound request lines are enabled by default; set
+    UVICORN_ACCESS_LOG=false to suppress them.
   . Set HTTPX_LOG_LEVEL=INFO to restore successful outbound HTTP request lines.
   . Log level is controlled by the LOG_LEVEL environment variable (default INFO)
   . No file sink: the container filesystem is ephemeral; logs go to stdout so Fly
@@ -52,10 +53,10 @@ def _colorize_setting() -> bool | None:
 
 
 def _configure_library_loggers() -> None:
-    """Keep routine successful HTTP traffic from obscuring application failures."""
+    """Configure library logging while retaining inbound access visibility."""
 
     access_logger = logging.getLogger("uvicorn.access")
-    access_logger.disabled = not _is_enabled("UVICORN_ACCESS_LOG", default=False)
+    access_logger.disabled = not _is_enabled("UVICORN_ACCESS_LOG", default=True)
 
     httpx_level = os.getenv("HTTPX_LOG_LEVEL", "WARNING").upper()
     logging.getLogger("httpx").setLevel(httpx_level)

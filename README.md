@@ -19,4 +19,7 @@ The applications remain separate entrypoints:
 - `sfcs_agent.main:app`
 - `bnat_agent.main:app`
 
-Deployment is manual and app-specific; see each `apps/<restaurant>/fly.toml`.
+Deployment is manual and app-specific. From the workspace root, run
+`scripts/deploy-agent.sh --app {sfcs|bnat}`; see each
+`apps/<restaurant>/DEPLOYMENT.md` and `apps/<restaurant>/fly.toml` for
+details, including how to follow runtime logs.
