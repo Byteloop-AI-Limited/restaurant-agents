@@ -16,7 +16,7 @@ PRESENTATION = RestaurantPresentation(
     enquiry_menu=EnquiryMenu(
         prompt="What would you like help with?",
         options=(
-            EnquiryOption("Customer complaint", "I want to make a customer complaint"),
+            EnquiryOption("Share feedback", "I want to share feedback"),
             EnquiryOption("Subscribe for offers", "I want to subscribe for offers"),
         ),
     ),

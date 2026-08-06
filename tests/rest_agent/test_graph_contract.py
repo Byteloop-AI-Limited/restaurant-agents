@@ -26,7 +26,7 @@ STANDARD_TOOLS = {
         "ask_user_to_select_service",
         "ask_user_to_select_enquiry",
         "capture_marketing_consent",
-        "submit_restaurant_complaint",
+        "submit_restaurant_feedback",
         "terminate_conversation",
         "transfer_to_delivery",
         "transfer_to_takeaway",

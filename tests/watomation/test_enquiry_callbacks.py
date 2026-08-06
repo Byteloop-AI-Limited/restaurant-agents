@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import ANY, AsyncMock
 
 import pytest
+from langchain_core.messages import SystemMessage
 
 from restaurant_agent_runtime import EnquiryMenu, EnquiryOption
 from restaurant_agent_runtime.rest_agent.agent_wa_senders import (
@@ -23,7 +24,7 @@ def _callback(*, callback_id: str, data: dict):
 BNAT_ENQUIRY_MENU = EnquiryMenu(
     prompt="What would you like help with?",
     options=(
-        EnquiryOption("Customer complaint", "I want to make a customer complaint"),
+        EnquiryOption("Share feedback", "I want to share feedback"),
         EnquiryOption("Parking availability", "I want to know about parking availability"),
         EnquiryOption("Subscribe for offers", "I want to subscribe for offers"),
     ),
@@ -82,7 +83,7 @@ async def test_specific_enquiry_callback_runs_triage_directly():
             "action": "/SelectEnquiry",
             "rest_ref": "bnat",
             "active_agent": "takeaway_agent",
-            "human_msg": "I want to make a customer complaint",
+            "human_msg": "I want to share feedback",
         },
     )
 
@@ -101,7 +102,8 @@ async def test_specific_enquiry_callback_runs_triage_directly():
         "rest_ref": "bnat",
         "active_agent": "triage_agent",
     }
-    assert kwargs["msgs"][-1].content == "I want to make a customer complaint"
+    assert kwargs["msgs"][0].content == "I want to share feedback"
+    assert isinstance(kwargs["msgs"][-1], SystemMessage)
 
 
 @pytest.mark.asyncio
@@ -110,7 +112,7 @@ async def test_enquiry_sender_uses_the_app_owned_menu():
     sfcs_menu = EnquiryMenu(
         prompt="How can we help?",
         options=(
-            EnquiryOption("Customer complaint", "I want to make a customer complaint"),
+            EnquiryOption("Share feedback", "I want to share feedback"),
             EnquiryOption("Subscribe for offers", "I want to subscribe for offers"),
         ),
     )
@@ -125,7 +127,7 @@ async def test_enquiry_sender_uses_the_app_owned_menu():
     kwargs = wa_client.send_message.await_args.kwargs
     assert kwargs["text"] == "How can we help?"
     assert [button.title for button in kwargs["buttons"]] == [
-        "Customer complaint",
+        "Share feedback",
         "Subscribe for offers",
     ]
     assert all('"action":"/SelectEnquiry"' in button.callback_data for button in kwargs["buttons"])
@@ -242,7 +244,7 @@ async def test_legacy_specific_enquiry_callback_runs_triage_directly():
             "action": "/SelectService",
             "rest_ref": "bnat",
             "active_agent": "takeaway_agent",
-            "human_msg": "I want to make a customer complaint",
+            "human_msg": "I want to share feedback",
         },
     )
 
@@ -258,4 +260,5 @@ async def test_legacy_specific_enquiry_callback_runs_triage_directly():
     graph_adapter.run_rest_graph_with_custom_msg.assert_awaited_once()
     kwargs = graph_adapter.run_rest_graph_with_custom_msg.await_args.kwargs
     assert kwargs["state_update_dict"]["active_agent"] == "triage_agent"
-    assert kwargs["msgs"][-1].content == "I want to make a customer complaint"
+    assert kwargs["msgs"][0].content == "I want to share feedback"
+    assert isinstance(kwargs["msgs"][-1], SystemMessage)
