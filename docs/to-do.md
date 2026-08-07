@@ -91,3 +91,5 @@ I need to update retian_thread to false after this;
     }
 
 -- Cache reset is available at POST /internal/cache/reset; see ADR-0016.
+-- On hitting goBack, this page errors out at https://restaurant.ordelo.app/checkout-error; This should have a way for starting new session from here.
+OR remove go back and instead, have cancel and create new order
