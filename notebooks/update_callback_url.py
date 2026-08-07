@@ -3,11 +3,12 @@
 # %% Select the app, using the same names accepted by scripts/run-agent.sh.
 from importlib import import_module
 
-from restaurant_agent_runtime.config.waba_setting import WabaBusinessSettings
-from restaurant_agent_runtime.utils.aws_setting import agent_env
+from restaurant_agent_runtime.config.bundle import load_settings_bundle
 
+# APP = "bnat"
 APP = "sfcs"
-CALLBACK_URL = "https://rest-agent-test.ordelo.app/"
+
+# %%
 
 identity_modules = {
     "bnat": "bnat_agent.identity",
@@ -21,11 +22,10 @@ except KeyError as exc:
 
 IDENTITY = import_module(identity_module).IDENTITY
 
-# %% Load the selected app's WABA settings and construct a synchronous client.
-waba_business_settings = WabaBusinessSettings.for_namespace(
-    IDENTITY.waba_namespace,
-    agent_env,
-)
+# %% Load the selected app's complete settings bundle and construct a synchronous client.
+# This reads the shared AWS secret once, then selects only IDENTITY.waba_namespace.
+settings = load_settings_bundle(IDENTITY)
+waba_business_settings = settings.waba
 wa_client = waba_business_settings.create_sync_client()
 wa_client
 # %% Inspect the phone's effective callback configuration before updating it.
@@ -39,6 +39,10 @@ business_phone_number = wa_client.get_business_phone_number(
 
 
 # %% Update the WABA-level callback. Executing this cell changes live Meta state.
+CALLBACK_URL = "https://rest-agent-test.ordelo.app/"
+# CALLBACK_URL = "https://bnat-agent.fly.dev/"
+
+
 update_result = wa_client.override_waba_callback_url(
     callback_url=CALLBACK_URL,
     verify_token=waba_business_settings.waa_verify_token,

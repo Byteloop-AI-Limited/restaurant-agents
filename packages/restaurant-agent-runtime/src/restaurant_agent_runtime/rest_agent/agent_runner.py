@@ -59,6 +59,11 @@ STANDARD_AGENT_NAMES = frozenset(
 )
 
 
+def _current_restaurant_master(runtime: RestaurantRuntime):
+    """Load the mutable operational record only for a real graph invocation."""
+    return runtime.operational_lookups.get_restaurant_master()
+
+
 def _build_graph(
     runtime: RestaurantRuntime,
     prompts: RestaurantPrompts,
@@ -230,6 +235,7 @@ async def run_rest_graph_with_custom_msg(
         ) = await OrdeloService(
             rest_ref=runtime.identity.rest_ref,
             database_client=runtime.settings.database_client,
+            operational_lookups=runtime.operational_lookups,
         ).get_or_create_customer_master(recipient, wa_name)
 
         if customer_master.postcode is None:
@@ -280,9 +286,15 @@ async def run_rest_graph_with_custom_msg(
         rest_ref=runtime.identity.rest_ref,
         restaurant_name=runtime.presentation.display_name,
         restaurant_logo_url=runtime.presentation.logo_url or "",
+        restaurant_contact_phone=runtime.presentation.contact_phone,
+        delivery_button_label=runtime.presentation.delivery_button_label,
+        takeaway_button_label=runtime.presentation.takeaway_button_label,
+        enquiry_menu=runtime.presentation.enquiry_menu,
+        restaurant_master=_current_restaurant_master(runtime),
         project_settings=runtime.settings.project,
         payment_settings=runtime.settings.payment,
         client_ordelo=runtime.settings.database_client,
+        operational_lookups=runtime.operational_lookups,
     )
 
     try:

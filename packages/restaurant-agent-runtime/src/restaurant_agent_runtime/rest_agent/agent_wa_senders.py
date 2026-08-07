@@ -6,6 +6,11 @@ from pydantic import BaseModel
 from pywa.types import Button, ButtonUrl
 from pywa_async import WhatsApp
 
+from restaurant_agent_runtime.runtime import EnquiryMenu
+from restaurant_agent_runtime.services.operational_lookup_cache import (
+    OperationalLookupCache,
+)
+
 class CallbackButtonData(BaseModel):
     model_config = {"frozen": True, "extra": "allow"}
     action: str
@@ -36,6 +41,10 @@ async def select_service_wa_send(
     recipient: str,
     wa_client: WhatsApp,
     rest_ref: str,
+    *,
+    operational_lookups: OperationalLookupCache,
+    delivery_button_label: str = "Delivery",
+    takeaway_button_label: str = "Takeaway",
 ) -> None:
     """
     Sends order type selection buttons with rest_ref included.
@@ -44,6 +53,9 @@ async def select_service_wa_send(
         recipient: Customer phone number
         wa_client: WhatsApp client instance
         rest_ref: Configured restaurant ID slug
+        operational_lookups: Required availability source; determines which
+            service buttons this recipient can see right now (Overwatch
+            recipients always see every button).
     """
     normalized_rest_ref = str(rest_ref).lower()
     selection_text = "How can I help you today?"
@@ -52,28 +64,30 @@ async def select_service_wa_send(
         action="/SelectService",
         rest_ref=normalized_rest_ref,
         active_agent="takeaway_agent",
-        human_msg="I want Takeaway",
+        human_msg="I want takeaway",
     )
     delivery = CallbackButtonData(
         action="/SelectService",
         rest_ref=normalized_rest_ref,
         active_agent="delivery_agent",
-        human_msg="I want Delivery",
+        human_msg="I want delivery",
     )
     inquiry = CallbackButtonData(
         action="/SelectService",
         rest_ref=normalized_rest_ref,
         active_agent="triage_agent",
-        human_msg="Inquiry",
+        human_msg="I have an enquiry",
     )
+    buttons = []
+    if operational_lookups.accepts_new_order("delivery", recipient):
+        buttons.append(Button(title=delivery_button_label, callback_data=delivery.model_dump_json()))
+    if operational_lookups.accepts_new_order("takeaway", recipient):
+        buttons.append(Button(title=takeaway_button_label, callback_data=takeaway.model_dump_json()))
+    buttons.append(Button(title="Enquiry", callback_data=inquiry.model_dump_json()))
     await wa_client.send_message(
         to=recipient,
         text=selection_text,
-        buttons=[
-            Button(title="Delivery (20% off)", callback_data=delivery.model_dump_json()),
-            Button(title="Collection (15% off)", callback_data=takeaway.model_dump_json()),
-            Button(title="Inquiry", callback_data=inquiry.model_dump_json()),
-        ],
+        buttons=buttons,
     )
 
 
@@ -103,7 +117,6 @@ async def select_marketing_consent_wa_send(
         human_msg="No, thanks",
         response="no",
     )
-
     await wa_client.send_message(
         to=recipient,
         text="Would you like to receive marketing updates from your selected restaurant?",
@@ -114,6 +127,32 @@ async def select_marketing_consent_wa_send(
     )
 
 
+async def select_enquiry_wa_send(
+    recipient: str,
+    wa_client: WhatsApp,
+    rest_ref: str,
+    *,
+    menu: EnquiryMenu,
+) -> None:
+    """Send the app-owned enquiry choices (WhatsApp permits at most three)."""
+    normalized_rest_ref = str(rest_ref).lower()
+    buttons = [
+        Button(
+            title=option.title,
+            callback_data=CallbackButtonData(
+                action="/SelectEnquiry",
+                rest_ref=normalized_rest_ref,
+                active_agent="triage_agent",
+                human_msg=option.human_message,
+            ).model_dump_json(),
+        )
+        for option in menu.options
+    ]
+    await wa_client.send_message(
+        to=recipient,
+        text=menu.prompt,
+        buttons=buttons,
+    )
 # %%
 async def confirm_delivery_address_wa(
     recipient: str, address: dict, wa_client: WhatsApp, header: str = None
@@ -181,7 +220,7 @@ async def send_restaurant_menu(
     rest_ref: str,
     wa_client: WhatsApp,
     logo_url: str,
-    database_client,
+    operational_lookups,
     order_type: Literal["delivery", "takeaway"] = "delivery",
     distance: float = 0.5,
 ) -> ValueError | None:
@@ -202,7 +241,7 @@ async def send_restaurant_menu(
             rest_menu=rest_menu_query_params,
             wa_client=wa_client,
             logo_url=logo_url,
-            database_client=database_client,
+            operational_lookups=operational_lookups,
         )
     except ValueError as err:
         return err

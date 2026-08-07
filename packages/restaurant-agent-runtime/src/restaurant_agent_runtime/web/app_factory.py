@@ -3,9 +3,9 @@
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Query
 
 from restaurant_agent_runtime.runtime import (
     GraphAdapterFactory,
@@ -15,6 +15,9 @@ from restaurant_agent_runtime.runtime import (
     RestaurantSettingsBundle,
 )
 from restaurant_agent_runtime.waba_callback import build_runtime_details
+from restaurant_agent_runtime.services.operational_lookup_cache import (
+    OperationalLookupCache,
+)
 from restaurant_agent_runtime.watomation.activity import ActivityMiddleware
 from restaurant_agent_runtime.watomation import activity
 
@@ -60,11 +63,11 @@ def _register_whatsapp_handlers(
         admin_collection_ready,
         delivery_address_confirmation,
         restaurant_order_confirmation_handler,
+        select_enquiry_handler,
         select_consent_handler,
         select_service_handler,
     )
     from restaurant_agent_runtime.watomation.on_message_graph_handler import (
-        ALLOWED_USERS_FILTER,
         WHEN_DEBUG,
         WHEN_PAYMENT_COMPLETE,
         WHEN_RESET,
@@ -74,7 +77,6 @@ def _register_whatsapp_handlers(
         handle_wa_msg_in_graph,
         reset_thread,
         send_closed_message,
-        send_redirect_to_offline_mode,
         simulate_payment_complete,
     )
 
@@ -87,7 +89,9 @@ def _register_whatsapp_handlers(
         return await reset_thread(client, message, runtime=runtime)
 
     async def bound_debug(client, message):
-        return await handle_debug_state(client, message, graph_adapter=graph_adapter)
+        return await handle_debug_state(
+            client, message, graph_adapter=graph_adapter, runtime=runtime
+        )
 
     async def bound_graph(client, message):
         return await handle_wa_msg_in_graph(
@@ -148,14 +152,26 @@ def _register_whatsapp_handlers(
             runtime=runtime,
         )
 
+    async def bound_enquiry(client, callback):
+        return await select_enquiry_handler(
+            client,
+            callback,
+            callback_data_type=bindings.callback_data_type,
+            graph_adapter=graph_adapter,
+            runtime=runtime,
+        )
+
     wa.add_handlers(
         MessageHandler(
             callback=bound_closed_message,
             filters=create_out_of_hours_filter(runtime),
         ),
-        MessageHandler(
-            callback=send_redirect_to_offline_mode, filters=ALLOWED_USERS_FILTER
-        ),
+        # Offline-mode routing needs a separate business condition. Overwatch
+        # recipients bypass restrictions and must not be intercepted here.
+        # MessageHandler(
+        #     callback=send_redirect_to_offline_mode,
+        #     filters=create_overwatch_filter(runtime),
+        # ),
         MessageHandler(callback=bound_reset, filters=WHEN_RESET),
         MessageHandler(callback=bound_location, filters=filters.location),
         MessageHandler(
@@ -181,6 +197,10 @@ def _register_whatsapp_handlers(
         CallbackButtonHandler(
             callback=bound_service,
             filters=filters.contains("/SelectService"),
+        ),
+        CallbackButtonHandler(
+            callback=bound_enquiry,
+            filters=filters.contains("/SelectEnquiry"),
         ),
         CallbackButtonHandler(
             callback=bound_consent,
@@ -225,6 +245,10 @@ def create_restaurant_app(
         settings=settings,
         async_wa_client=async_wa_client,
         sync_wa_client=sync_wa_client,
+        operational_lookups=OperationalLookupCache(
+            rest_ref=identity.rest_ref,
+            database_client=settings.database_client,
+        ),
     )
     graph_adapter = graph_adapter_factory(runtime)
     app.state.restaurant_runtime = runtime
@@ -240,6 +264,36 @@ def create_restaurant_app(
     @app.get("/internal/activity", include_in_schema=False)
     async def internal_activity():
         return activity.snapshot()
+
+    @app.post("/internal/cache/reset", include_in_schema=False)
+    async def reset_operational_cache(
+        scope: Literal[
+            "all", "operational_config", "restaurant_master", "overwatch"
+        ] = "all",
+        app_ref: str | None = Query(default=None),
+    ):
+        if app_ref is not None and scope != "operational_config":
+            raise HTTPException(
+                status_code=422,
+                detail="app_ref is only valid when scope=operational_config",
+            )
+        if app_ref is not None:
+            normalized_app_ref = app_ref.strip().upper()
+            if normalized_app_ref not in {
+                identity.rest_ref,
+                "ORDELO",
+                "RESTAURANT_MENU",
+            }:
+                raise HTTPException(status_code=404, detail="Unknown application reference")
+            app_ref = normalized_app_ref
+        return {
+            "scope": scope,
+            "app_ref": app_ref,
+            "removed_entries": runtime.operational_lookups.reset(
+                scope=scope,
+                app_ref=app_ref,
+            ),
+        }
 
     @app.get("/identity", include_in_schema=False)
     async def runtime_identity():

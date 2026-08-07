@@ -1,7 +1,7 @@
 """
 Unit tests for OrdeloService HTTP client
     . Stubs httpx.AsyncClient to capture POST URL and JSON payload
-    . Stubs config.params.get_restaurant_base_url_async for base URL
+    . Stubs the runtime-owned operational lookup cache for the Ordelo base URL
     . Verifies happy path, HTTP error returns None, and dispatch URLs
   Functions/Classes:
     . FakeResponse
@@ -18,10 +18,13 @@ Unit tests for OrdeloService HTTP client
 """
 
 import sys
-from types import ModuleType, SimpleNamespace
+from types import SimpleNamespace
 
 import httpx
 import pytest
+from restaurant_agent_runtime.services.operational_lookup_cache import (
+    OperationalLookupCache,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -31,13 +34,6 @@ def _stub_config(monkeypatch):
     config_stub = build_config_stub()
     monkeypatch.setitem(sys.modules, "config", config_stub)
 
-    params_stub = ModuleType("restaurant_agent_runtime.config.params")
-
-    async def get_restaurant_base_url_async(key, *, database_client):
-        return "https://ordelo.test"
-
-    params_stub.get_restaurant_base_url_async = get_restaurant_base_url_async
-    monkeypatch.setitem(sys.modules, "restaurant_agent_runtime.config.params", params_stub)
     yield config_stub
 
 
@@ -89,9 +85,29 @@ def _patch_httpx(monkeypatch, module, response):
 
 
 def _service(module):
+    class ConfigClient:
+        def table(self, _name):
+            return self
+
+        def select(self, _fields):
+            return self
+
+        def eq(self, _field, _value):
+            return self
+
+        def limit(self, _count):
+            return self
+
+        def execute(self):
+            return SimpleNamespace(data=[{"config_value": "https://ordelo.test"}])
+
     return module.OrdeloService(
         rest_ref="ELAS",
         database_client=SimpleNamespace(),
+        operational_lookups=OperationalLookupCache(
+            rest_ref="ELAS",
+            database_client=ConfigClient(),
+        ),
     )
 
 

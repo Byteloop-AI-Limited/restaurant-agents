@@ -47,6 +47,14 @@ from supabase._sync.client import Client
 from typing_extensions import NotRequired, TypedDict
 from loguru import logger
 
+from restaurant_agent_runtime.services.ordelo_service.datamodels.restaurant_master_pymodel import (
+    RestaurantMaster,
+)
+from restaurant_agent_runtime.services.operational_lookup_cache import (
+    OperationalLookupCache,
+)
+from restaurant_agent_runtime.runtime import EnquiryMenu
+
 
 # %% Define AgentState
 class AgentState(TypedDict):
@@ -111,9 +119,15 @@ class ContextSchema(BaseModel):
     rest_ref: str
     restaurant_name: str
     restaurant_logo_url: str
+    restaurant_contact_phone: str | None = None
+    delivery_button_label: str = "Delivery"
+    takeaway_button_label: str = "Takeaway"
+    enquiry_menu: EnquiryMenu
+    restaurant_master: RestaurantMaster
     project_settings: Any
     payment_settings: Any
     client_ordelo: Client
+    operational_lookups: OperationalLookupCache
     thread_handler: Any | None = None
 
     def model_post_init(self, __context: Any) -> None:
@@ -156,6 +170,23 @@ async def _send_menu_tool(
     from restaurant_agent_runtime.rest_agent.agent_wa_senders import send_restaurant_menu
 
     ctx = runtime.context
+    if not ctx.operational_lookups.accepts_new_order(order_type, ctx.recipient):
+        await ctx.wa_client.send_message(
+            to=ctx.recipient,
+            text="Sorry, new orders for that service have closed for today. You can still send us an enquiry.",
+            reply_to_message_id=state.get("reply_to_msg_id"),
+        )
+        return Command(
+            goto=END,
+            update={
+                "messages": [
+                    ToolMessage(
+                        "New order menu blocked because the service order cutoff has passed.",
+                        tool_call_id=tool_call_id,
+                    )
+                ]
+            },
+        )
     recipient = ctx.recipient
     thread_id, _ = await ctx.thread_handler.get_or_create_thread(recipient)
     min_order_value = _normalize_min_order_value(state.get("min_order_value"))
@@ -169,7 +200,7 @@ async def _send_menu_tool(
         order_type=order_type,
         wa_client=ctx.wa_client,
         logo_url=ctx.restaurant_logo_url,
-        database_client=ctx.client_ordelo,
+        operational_lookups=ctx.operational_lookups,
     )
     if isinstance(menu_err, ValueError):
         await ctx.wa_client.send_message(
@@ -253,6 +284,19 @@ def transfer_to_delivery(
     """
     if (guard := _run_transfer_guards(runtime.state, runtime.tool_call_id)) is not None:
         return guard
+    if not runtime.context.operational_lookups.accepts_new_order(
+        "delivery", runtime.context.recipient
+    ):
+        return Command(
+            update={
+                "messages": [
+                    ToolMessage(
+                        "Delivery handoff blocked because new delivery orders are closed. Offer an enquiry instead.",
+                        tool_call_id=runtime.tool_call_id,
+                    )
+                ]
+            }
+        )
 
     transfer_message = ToolMessage(
         content="Transferred to delivery agent. Customer wants food delivery.",
@@ -318,6 +362,19 @@ def transfer_to_takeaway(
     """
     if (guard := _run_transfer_guards(state, runtime.tool_call_id)) is not None:
         return guard
+    if not runtime.context.operational_lookups.accepts_new_order(
+        "takeaway", runtime.context.recipient
+    ):
+        return Command(
+            update={
+                "messages": [
+                    ToolMessage(
+                        "Takeaway handoff blocked because new takeaway orders are closed. Offer an enquiry instead.",
+                        tool_call_id=runtime.tool_call_id,
+                    )
+                ]
+            }
+        )
 
     _current_active_agent = state.get("active_agent", "triage_agent")
     _current_rest_ref = state.get("rest_ref")
@@ -363,7 +420,7 @@ def transfer_to_triage(
     """Transfer the conversation back to the triage agent.
 
     Use this tool when the customer's request is outside this agent's scope:
-    complaints, general queries (parking, events, catering, contact info),
+    feedback, general queries (parking, events, catering, contact info),
     restaurant switch, ending/restarting the conversation, or when a system
     message instructs to terminate the conversation.
     """

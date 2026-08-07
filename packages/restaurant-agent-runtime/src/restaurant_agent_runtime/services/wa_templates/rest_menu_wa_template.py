@@ -19,7 +19,6 @@ from pywa.types.templates import CarouselCard
 # from pywa.types.templates import CarouselTemplate
 # waba_phone_setting, waba_business_setting
 
-from restaurant_agent_runtime.config.params import get_restaurant_base_url_async
 from restaurant_agent_runtime.services.wa_templates.rest_menu_query_params import RestMenuQueryParams
 
 
@@ -174,13 +173,15 @@ async def send_restaurant_menu_non_carousel(
     recipient: str,
     rest_menu: RestMenuQueryParams,
     wa_client,
-    logo_url: str,
-    database_client,
+    logo_url: str | None,
+    operational_lookups,
 ):
     """
-    Send a non-carousel restaurant menu message + image with CTA button.
+    Send a non-carousel restaurant menu CTA.
 
     Uses ORDELO_AGG base URL and current project rest_ref to build the menu link.
+    Restaurants without a configured logo receive an equivalent text CTA rather
+    than an invalid image send.
     """
     rest_menu_params = (
         rest_menu
@@ -190,10 +191,7 @@ async def send_restaurant_menu_non_carousel(
     rest_ref = rest_menu.rest_ref
     rest_menu_query_params = rest_menu_params.to_query_params()
 
-    restaurant_base_url = await get_restaurant_base_url_async(
-        "RESTAURANT_MENU",
-        database_client=database_client,
-    )
+    restaurant_base_url = operational_lookups.get_app_url("RESTAURANT_MENU")
     restaurant_url = (
         f"{restaurant_base_url}/restaurant/{rest_ref.lower()}?{rest_menu_query_params}"
     )
@@ -205,12 +203,19 @@ async def send_restaurant_menu_non_carousel(
         order_button_title = "Order Collection"
         caption = "Get started with your collection order"
 
-    img_resp = await wa_client.send_image(
-        to=recipient,
-        image=logo_url,
-        caption=caption,
-        reply_to_message_id=None,
-        buttons=ButtonUrl(title=order_button_title, url=restaurant_url),
-    )
+    button = ButtonUrl(title=order_button_title, url=restaurant_url)
+    if logo_url:
+        return await wa_client.send_image(
+            to=recipient,
+            image=logo_url,
+            caption=caption,
+            reply_to_message_id=None,
+            buttons=button,
+        )
 
-    return img_resp
+    return await wa_client.send_message(
+        to=recipient,
+        text=caption,
+        reply_to_message_id=None,
+        buttons=button,
+    )

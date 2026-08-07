@@ -34,6 +34,7 @@ files into `RestaurantPrompts` during module import.
 | Desired change | Correct location |
 | --- | --- |
 | Wording, restaurant policy, tone, or tool-use instruction | App-owned prompt file |
+| Standard Enquiry button labels and callback intent | App-owned `RestaurantPresentation.enquiry_menu` |
 | Add a native capability to one existing node | App-owned tool plus `extra_tools_by_agent` |
 | Replace one complete standard node | App-owned runnable plus `agent_overrides` |
 | Add a graph node or change state/routing/handoffs | App-owned `GraphAdapter` |
@@ -41,6 +42,9 @@ files into `RestaurantPrompts` during module import.
 
 Do not ask a prompt to call a tool that the selected node does not expose. Do
 not copy a shared agent module into an application to make a prompt change.
+Keep an Enquiry Menu to WhatsApp's three-button maximum. For a genuinely new
+callback workflow, use an app-owned native PyWa handler instead of extending
+the standard menu into a callback registry.
 
 ## Cross-App Change Rules
 
@@ -73,7 +77,7 @@ not copy a shared agent module into an application to make a prompt change.
 
 ### 3. General queries stay in triage
 
-Complaints, parking, contact details, events, and similar non-ordering questions
+Feedback, parking, contact details, events, and similar non-ordering questions
 remain in triage unless the customer explicitly requests a specialized service.
 
 ### 4. Inquiry selection stays in triage

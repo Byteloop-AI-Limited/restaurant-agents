@@ -4,7 +4,7 @@ kill_timeout = "300s"
 primary_region = "lhr"
 
 [build]
-  dockerfile = "Dockerfile"
+  dockerfile = "../../Dockerfile"
 
   [build.args]
     APP_PACKAGE = "sfcs-agent"

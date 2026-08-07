@@ -1,4 +1,4 @@
 interface:
-  display_name: "Verify WhatsApp App Change"
-  short_description: "Validate app changes through WhatsApp replies"
-  default_prompt: "Use $verify-whatsapp-app-change to run an end-to-end WhatsApp verification for the changed restaurant app."
+  display_name: "Verify WhatsApp Change"
+  short_description: "Verify WhatsApp changes with browser and logs"
+  default_prompt: "Use $verify-whatsapp-app-change to verify an SFCS or BNAT WhatsApp change with browser evidence and logs."

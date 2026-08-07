@@ -32,6 +32,7 @@ from restaurant_agent_runtime.rest_agent.agents.agent_harness import (
     transfer_to_delivery,
     transfer_to_triage,
 )
+from restaurant_agent_runtime.rest_agent.prompt_runtime import render_prompt_middleware
 
 
 # %%
@@ -81,6 +82,7 @@ def build_takeaway_agent(*, model, system_prompt: str, extra_tools=()):
         tools=[*takeaway_tools, *extra_tools],
         system_prompt=system_prompt,
         middleware=[
+            render_prompt_middleware(system_prompt),
             cleanup_before_model,
             respond_on_wa,
         ],

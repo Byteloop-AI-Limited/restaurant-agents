@@ -407,7 +407,7 @@ Only a finding proven to block the move entered checkpoints 2-4.
 | Order code had competing legacy/new models and global settings | `services/order_management/food_order_pymodel.py`; `order_item_pymodel.py` | Resolved by ADR-0009: `FoodOrder` and `OrderItem` are canonical boundary models and both dormant writers were deleted. |
 | In-memory thread fallback remained in production utility imports | `services/thread_management/graph_config.py`; `tests/services/thread_management/test_graph_config.py` | Resolved: active graph config uses the persistent `ThreadHandler` only; the fallback and its legacy utility caller were deleted. |
 | AWS secret was loaded at import | `config/bundle.py`; `tests/test_settings_bundle.py`; `tests/test_aws_secret_name.py` | Resolved by ADR-0011: explicit app composition performs one settings fetch and config/model imports are side-effect free. |
-| Restaurant/base URL and dedup caches are process-local | `config/params.py:30-32,48-132`; `watomation/dedup.py:23-39` | Document one-worker constraint; revisit only with multi-instance requirements. |
+| Operational lookup and dedup caches are process-local | `services/operational_lookup_cache.py`; `watomation/dedup.py:23-39` | ADR-0016 gives each RestaurantRuntime an isolated TTL cache and scoped reset endpoint; reset every replica if multi-instance deployment is introduced. |
 | PGVector example/retriever code was inconsistent with the commented store property | `config/pg_setting.py` | Resolved: the unused example, retriever, and commented store property were deleted. |
 
 ## Post-migration cleanup ledger

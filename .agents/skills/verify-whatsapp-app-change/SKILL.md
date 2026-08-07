@@ -1,134 +1,121 @@
 ---
 name: verify-whatsapp-app-change
-description: Run a bounded end-to-end WhatsApp verification for restaurant-agents code changes and record auditable evidence. Use after changes to an app's webhook handling, WABA/runtime configuration, message routing, deduplication, graph behavior, prompts, or outbound replies when validation requires sending a real probe through WhatsApp Web and waiting for the target app's response.
+description: Verify restaurant-agents WhatsApp changes through a controlled Chrome/Computer Use conversation, local FastAPI observation, and runtime-log correlation. Use after SFCS or BNAT changes to prompts, callbacks, WABA/runtime configuration, message routing, service availability, tools, or replies when an auditable live or local verification loop is required.
 ---
 
 # Verify a WhatsApp App Change
 
-Verify that the intended `restaurant-agents` runtime receives a deliberate
-WhatsApp message and produces the expected response. Treat this as a live smoke
-test after automated checks, not as a replacement for tests, Ruff, or log
-inspection.
+Use this skill after automated tests. Treat a browser reply as user-visible
+evidence, not proof that the intended code revision handled the event.
 
-## Establish the test boundary
+## Establish scope and the verification surface
 
-1. Read the repository instructions and governing architecture before acting.
-2. Identify the target app (`sfcs` or `bnat`), environment, scenario, and code
-   revision under test.
-3. Confirm that the target runtime actually contains the revision. Do not deploy
-   or change callbacks, WABA configuration, secrets, or cloud resources unless
-   the user explicitly requests it.
-4. Use only an owner-approved test chat. Never select a customer or rider chat
-   merely because it is convenient.
-5. Agree on the exact probe text and expected response. Prefer a non-sensitive,
-   unique probe that exercises the changed path. Add a short correlation marker
-   only when it will not change the scenario's semantics.
-6. Avoid probes that create orders, payments, reservations, subscriptions, or
-   other business side effects unless those effects are explicitly authorized.
+1. Read the repository instructions and identify the target app (`sfcs` or
+   `bnat`), environment, revision, approved test-chat alias, scenario, and
+   expected result.
+2. Preserve unrelated working-tree changes. Never print credentials, full phone
+   numbers, message payloads containing personal data, or secret-bearing URLs.
+3. Obtain explicit authorization before actions with business effects. A normal
+   greeting or `/reset` is low-risk only in an owner-approved test chat; orders,
+   payments, reservations, consent writes, and test feedback submissions that notify real
+   administrators need specific approval at the time of the action.
+4. Choose the evidence source:
 
-Record the app, environment, revision, test chat alias, scenario, expected
-behavior, and local time zone before sending.
+   | Need | Use |
+   | --- | --- |
+   | Unit/route behavior without external effects | Local FastAPI server and controlled HTTP tests |
+   | Customer-visible deployed behavior | WhatsApp Web plus deployed-runtime logs |
+   | End-to-end callback into local code | A separately authorized public ingress and callback change |
 
-## Run preflight checks
+   A server bound to `127.0.0.1` cannot receive Meta callbacks from WhatsApp.
+   Do not expose it through a tunnel or change a WABA callback merely to test it
+   unless the owner explicitly authorizes those external changes.
 
-Run the smallest relevant automated checks first. Confirm the target service is
-healthy and inspect its recent logs for an existing fault. Preserve unrelated
-working-tree changes and never print credentials, tokens, phone numbers, or
-secret-bearing URLs.
+Read [runtime-observation.md](references/runtime-observation.md) before
+starting a local server or opening runtime logs.
 
-If the deployed revision cannot be established, continue only when the user
-wants a connectivity check and label the final result `INCONCLUSIVE` for code
-validation.
+## Run local FastAPI observation safely
 
-## Send the probe through WhatsApp Web
+Use a local process to inspect startup, route, and controlled-test logs. Do not
+source `.env` files or echo AWS settings. Require the owner-provided bootstrap
+variables before importing an app, because settings load during startup.
 
-Use the user-requested browser surface. When Chrome is requested or an existing
-signed-in Chrome WhatsApp Web tab is part of the task, use the available Chrome
-control skill and its safety rules.
+1. Select an unused port and bind only to `127.0.0.1`.
+2. Start exactly one app worker in an interactive terminal session.
+3. Check its matching local `/healthz` endpoint and retain only redacted,
+   scenario-relevant log lines.
+4. Stop the process after the bounded test. Local logs do not establish that a
+   deployed app handled a WhatsApp message.
 
-1. Claim the existing `https://web.whatsapp.com/` tab without reloading it.
-2. Locate the exact approved chat and verify the chat header before editing the
-   composer. Fail closed if the name is ambiguous.
-3. Fill the composer with the exact agreed probe. Do not include secrets or
-   unrelated personal data.
-4. Ask for action-time confirmation immediately before pressing Enter or
-   clicking Send. Sending a message represents the user to a third party, so an
-   earlier blanket instruction does not replace this confirmation.
-5. After confirmation, send once. Record the send time and the strongest visible
-   state: `sent`, `delivered`, or `read`.
+When Codex starts the process, keep the session identifier, poll its output
+after each controlled request, and report the server process and port. When the
+owner starts it, ask them to provide only the relevant redacted log excerpt.
 
-Do not infer application success from delivery alone. Delivery shows that
-WhatsApp accepted and delivered the message; it does not prove that the changed
-application processed it.
+## Check the deployed runtime before live messaging
 
-## Wait for a fresh reply
+1. Establish that the deployed target has the intended revision. If this cannot
+   be established, a WhatsApp interaction may be a connectivity test only and
+   code verification is `INCONCLUSIVE`.
+2. Check health and inspect the narrow log window around the intended probe.
+   Use the app-owned Fly manifest to identify the target; do not guess an app
+   name or modify cloud configuration.
+3. Run focused automated checks first, then Ruff and the full suite for
+   cross-cutting runtime changes.
 
-Capture the chat state immediately after sending, then check for a new inbound
-message after a short interval. Compare message direction, timestamp, and content
-against the sent probe; do not mistake an older message or the outbound probe for
-a reply.
+## Run the browser loop with Computer Use
 
-Use a bounded wait window agreed with the user. For a quick smoke test, check at
-roughly 10, 30, and 60 seconds. Keep the user updated at least once per minute if
-the window is longer. Avoid rapid polling and do not send automatic follow-ups.
+When the task depends on the existing signed-in Chrome WhatsApp Web session,
+use Computer Use rather than replacing it with a different browser session.
 
-If a reply arrives, record its time, content or redacted summary, and latency. If
-no reply arrives by the deadline, preserve the delivered state and continue to
-log correlation instead of immediately declaring failure.
+1. Claim the existing `web.whatsapp.com` tab without reloading it. Locate the
+   owner-approved chat and verify the visible header before using the composer.
+2. Call `sky.get_app_state` immediately before **every** UI action and again
+   after it. Accessibility indices and screenshots are state-specific; never
+   reuse a stale index or coordinate.
+3. Use the visible text, timestamps, and direction to distinguish the new
+   outbound probe from an old message or a fresh app response. Capture a
+   screenshot only when accessibility text is insufficient.
+4. Send the agreed low-risk probe once. Wait on a bounded schedule (about 10,
+   30, and 60 seconds for a quick smoke test); do not send automatic follow-ups.
+   Keep the owner updated at least once a minute while waiting.
+5. For an interactive menu, reset between independent flows when state could
+   affect the result. Stop before any destructive or externally visible branch
+   unless that precise branch is authorized.
 
-## Correlate application evidence
+## Correlate and classify
 
-Inspect only the target app's logs for the send/reply window. Correlate the probe
-using a safe marker, timestamp, or redacted message identifier. Check the stages
-relevant to the change:
+Correlate a safe marker, send time, or redacted message-id suffix with the
+target runtime. Check only stages relevant to the change:
 
-- inbound webhook received and signature validation outcome;
-- correct WABA namespace and restaurant runtime selected;
-- deduplication decision;
-- intended handler or graph path invoked;
-- outbound reply attempted and accepted or rejected;
-- exception, timeout, or retry evidence;
-- absence of cross-app handling or duplicate replies.
+- webhook receipt and signature outcome;
+- selected WABA namespace and restaurant runtime;
+- deduplication and intended callback/graph route;
+- outbound response result; and
+- exceptions, retries, cross-app handling, or duplicate replies.
 
-Sanitize evidence. Record identifiers as short redacted suffixes or hashes when
-needed; never store access tokens, app secrets, full phone numbers, message
-payloads containing personal data, or secret-bearing URLs.
+Classify the scenario:
 
-## Classify the result
+- `PASS` — target revision is established, expected fresh reply appears, and
+  matching runtime evidence shows correct handling without duplicate/cross-app
+  effects.
+- `FAIL` — evidence establishes an incorrect reply, exception, wrong route,
+  duplicate, or rejected outbound call.
+- `INCONCLUSIVE` — revision/log correlation is unavailable, the observation
+  window expires, browser access fails, or external state prevents attribution.
 
-- `PASS`: the tested revision/runtime is established, the probe is delivered, a
-  fresh expected reply arrives, and logs show the target app handled the matching
-  event without cross-app or duplicate side effects.
-- `FAIL`: evidence establishes a defect, such as non-delivery caused by the
-  tested system, rejected webhook processing, wrong app routing, an exception,
-  duplicate handling, or a reply that contradicts the expected behavior.
-- `INCONCLUSIVE`: the probe is delivered but no reply arrives without enough log
-  evidence, the running revision is uncertain, the observation window expires,
-  authentication/browser access is unavailable, or external WhatsApp/Meta state
-  prevents attribution to the code change.
-
-State exactly which automated checks, live actions, and log stages were or were
-not verified. Never upgrade `INCONCLUSIVE` to `PASS` based only on a delivered or
-read receipt.
-
-## Evidence record
-
-Use this compact structure in the handoff, issue, or PR note. Ask before writing
-live-chat evidence to a repository file, and redact personal data by default.
+Use this handoff format. Ask before persisting live-chat evidence in the repo.
 
 ```text
 WhatsApp verification
-- App / environment:
-- Revision under test:
-- Scenario:
-- Test chat alias:
-- Probe text or safe correlation marker:
-- Sent at / delivery state:
-- Reply at / latency:
-- Reply summary:
-- Application log correlation:
-- Cross-app and duplicate check:
-- Automated checks completed:
+- App / environment / revision:
+- Test-chat alias and authorized scope:
+- Scenario and expected result:
+- Local server / health / log evidence:
+- Probe sent at / delivery state:
+- Fresh reply at / latency / redacted summary:
+- Runtime-log correlation:
+- Automated checks:
 - Result: PASS | FAIL | INCONCLUSIVE
-- Unverified boundaries / follow-up:
+- Side effects performed or deliberately avoided:
+- Follow-up:
 ```

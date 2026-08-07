@@ -78,6 +78,19 @@ documents only its visible commands, events, payloads, and authority. Current
 external contexts include Meta WhatsApp, Ordelo/rider/takeaway fulfilment,
 payment services, and address/geocoding providers.
 
+### Enquiry Menu
+
+An app-owned, bounded WhatsApp button menu for non-order triage. It contains
+one prompt and one to three `EnquiryOption` values; it passes through
+`RestaurantPresentation` so callback and triage-tool paths show the same
+restaurant-specific choices.
+
+### Enquiry Option
+
+One visible Enquiry Menu label plus the canonical customer intent placed in its
+`/SelectEnquiry` callback. It is customer-facing composition data, not a graph
+node, callback registry, or persisted state.
+
 ## F
 
 ### FoodOrder
@@ -131,6 +144,13 @@ A persisted line item belonging to a FoodOrder. It has no independent business
 lifecycle outside its order. Its canonical runtime model is independent of any
 database-writer implementation.
 
+### Operational Lookup Cache
+
+The per-RestaurantRuntime, process-local TTL cache for stable operational
+configuration: application URLs, RestaurantMaster, and the database-backed
+Overwatch recipient list. It is not a source of truth and excludes
+transactional customer, order, payment, fulfilment, and Thread data.
+
 ## P
 
 ### Payment Projection
@@ -167,13 +187,15 @@ namespace the running process may serve.
 ### RestaurantMaster
 
 The authoritative persisted mutable operational Restaurant record. It owns
-address, coordinates, administrators, service hours, and operational settings.
+address, coordinates, administrators, venue service hours, and operational
+settings. New-order cutoffs are derived from its service-hour schedule, not
+persisted separately.
 
 ### RestaurantPresentation
 
 The immutable, app-owned customer-facing branding record: display name, contact
-phone, and logo URL. It is deliberately separate from RestaurantMaster's
-mutable operational data.
+phone, logo URL, service labels, and bounded interactive menu copy. It is
+deliberately separate from RestaurantMaster's mutable operational data.
 
 ### RestaurantPrompts
 
@@ -184,8 +206,8 @@ takeaway prompts. Prompts are application-owned inputs to the shared runtime.
 
 The immutable environment record assembled for exactly one Restaurant
 Application. It contains identity, presentation, settings, and the exact async
-and sync WhatsApp clients. The record is frozen, but referenced clients and
-services are effectful and mutable.
+and sync WhatsApp clients plus its Operational Lookup Cache. The record is
+frozen, but referenced clients and services are effectful and mutable.
 
 ### RestaurantSettingsBundle
 
@@ -201,6 +223,36 @@ explicit parameters.
 The RestaurantMaster-owned weekly availability schedule. `WeeklySchedule` is
 the parsed runtime value used to determine open/closed behavior and the next
 opening time.
+
+### Venue Hours
+
+The RestaurantMaster `service_hours_json` schedule governing whether the
+restaurant can receive WhatsApp messages and enquiries.
+
+### Order Cutoff
+
+A RestaurantMaster per-service number of minutes before an active venue-hours
+interval ends when new delivery or takeaway orders stop. It does not close the
+venue or invalidate existing order/payment/status flows.
+
+### Overwatch Recipient
+
+A recipient listed in Ordelo's `ordelo_config.overwatch_list`, permitted to
+exercise the complete restaurant-agent flow outside venue hours and per-service
+new-order cutoffs. It is a bounded verification bypass, not a customer
+entitlement; an unreadable list fails closed.
+
+### Restaurant Feedback
+
+An ephemeral customer report of any sentiment — praise, a suggestion, or a
+problem — containing customer context, optional order reference, and concise
+description. Ordelo validates the restaurant and schedules notifications to
+its current administrators; it is not persisted by the WhatsApp app.
+
+### Admin Notification Scheduled
+
+The accepted Ordelo outcome meaning notification work was queued in background
+tasks. It does not mean every administrator has received the WhatsApp message.
 
 ### Source of Truth
 

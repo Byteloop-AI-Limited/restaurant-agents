@@ -4,7 +4,7 @@ WhatsApp message handlers for customer interactions
     . Manages conversation flows using LangGraph for stateful dialogues
     . Processes location data shared by customers
     . Implements thread state management for conversation history
-    . Bypasses the after-hours guard for whitelisted ALLOWED_USERS
+    . Bypasses the after-hours guard for runtime Overwatch recipients
     . Defers service-hour decisions to REST_MASTER.service_hours (WeeklySchedule)
   Functions/Classes:
     . handle_wa_msg_in_graph - Routes messages to appropriate graph handler
@@ -21,26 +21,15 @@ WhatsApp message handlers for customer interactions
 from datetime import datetime, timezone
 
 import httpx
-from pywa.filters import from_users
 from pywa.types import Message, MessageStatus
 from pywa_async import WhatsApp, filters
 
 from restaurant_agent_runtime.config import logger
-from restaurant_agent_runtime.config.params import (
-    get_restaurant_base_url_async,
-    get_restaurant_master_cached,
-)
 from restaurant_agent_runtime.runtime import GraphAdapter, RestaurantRuntime
 from restaurant_agent_runtime.services.maps_service import AddressResolver
 from restaurant_agent_runtime.services.thread_management import ThreadHandler
 from restaurant_agent_runtime.services.tz_utils import UK_TZ
 from restaurant_agent_runtime.watomation.dedup import wa_dedup
-
-# %% Allowed users list
-ALLOWED_USERS = ["447448440754", "447446933210"]
-ALLOWED_USERS_FILTER = from_users(",".join(ALLOWED_USERS))
-
-
 # %% After-hours guard
 def _message_time_uk(msg: Message) -> datetime | None:
     ts = getattr(msg, "timestamp", None) or getattr(msg, "timestamp_ms", None)
@@ -68,18 +57,11 @@ def _message_time_uk(msg: Message) -> datetime | None:
 def is_outside_service_hours(
     _: WhatsApp, msg: Message, runtime: RestaurantRuntime
 ) -> bool:
-    if msg.sender in ALLOWED_USERS:
-        return False
-
     msg_time = _message_time_uk(msg)
     if msg_time is None:
         return False
 
-    schedule = get_restaurant_master_cached(
-        runtime.identity.rest_ref,
-        database_client=runtime.settings.database_client,
-    ).service_hours
-    return not schedule.is_open(msg_time)
+    return not runtime.operational_lookups.is_open(msg.sender, msg_time)
 
 
 def create_out_of_hours_filter(runtime: RestaurantRuntime):
@@ -88,13 +70,20 @@ def create_out_of_hours_filter(runtime: RestaurantRuntime):
     return filters.new(lambda wa, msg: is_outside_service_hours(wa, msg, runtime))
 
 
+def create_overwatch_filter(runtime: RestaurantRuntime):
+    """Bind privileged-message filtering to this runtime's cached allowlist."""
+
+    return filters.new(
+        lambda _wa, msg: runtime.operational_lookups.is_overwatch_recipient(
+            msg.sender
+        )
+    )
+
+
 async def send_closed_message(
     wa: WhatsApp, msg: Message, *, runtime: RestaurantRuntime
 ):
-    schedule = get_restaurant_master_cached(
-        runtime.identity.rest_ref,
-        database_client=runtime.settings.database_client,
-    ).service_hours
+    schedule = runtime.operational_lookups.get_restaurant_master().service_hours
     closed_text = schedule.format_today(datetime.now(UK_TZ))
     await wa.send_message(
         to=msg.sender,
@@ -124,10 +113,7 @@ async def simulate_payment_complete(
 
     recipient = msg.sender
     database_client = runtime.settings.database_client
-    ordelo_app_url = await get_restaurant_base_url_async(
-        "ORDELO",
-        database_client=database_client,
-    )
+    ordelo_app_url = runtime.operational_lookups.get_app_url("ORDELO")
     result = (
         database_client.table("food_order")
         .select("order_id, payment_status")
@@ -243,10 +229,14 @@ def _format_debug_state(state: dict) -> str:
 
 
 async def handle_debug_state(
-    wa: WhatsApp, msg: Message, *, graph_adapter: GraphAdapter
+    wa: WhatsApp,
+    msg: Message,
+    *,
+    graph_adapter: GraphAdapter,
+    runtime: RestaurantRuntime,
 ):
     recipient = msg.sender
-    if recipient not in ALLOWED_USERS:
+    if not runtime.operational_lookups.is_overwatch_recipient(recipient):
         return
     try:
         state = await graph_adapter.debug_state(recipient)

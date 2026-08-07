@@ -2,7 +2,7 @@
 """Triage agent for onboarding, specialist routing, and conversation termination.
   . Handles service intent classification for a single configured restaurant
   . Routes to specialist agents (delivery, takeaway) on explicit intent
-  . Answers general queries (parking, complaints, contact info) directly
+  . Answers general queries (parking, feedback, contact info) directly
   . Owns terminate_conversation — the only agent that can end sessions
   . Manages marketing consent capture before termination
 Functions/Classes:
@@ -10,6 +10,7 @@ Functions/Classes:
   . send_welcome_message
   . ask_user_to_select_service
   . capture_marketing_consent
+  . submit_restaurant_feedback
   . terminate_conversation
 """
 
@@ -33,16 +34,18 @@ from restaurant_agent_runtime.rest_agent.agents.agent_harness import (
 )
 from restaurant_agent_runtime.rest_agent.agent_wa_senders import (
     select_marketing_consent_wa_send,
+    select_enquiry_wa_send,
     select_service_wa_send,
     send_welcome_msg_wa,
 )
-# %% dynamic prompt
-from langchain.agents.middleware import dynamic_prompt, ModelRequest
-
-
-@dynamic_prompt
-def context_aware_prompt(request: ModelRequest) -> str:
-    return "You are a helpful assistant for the restaurant."
+from restaurant_agent_runtime.rest_agent.prompt_runtime import render_prompt_middleware
+from restaurant_agent_runtime.services.ordelo_service.datamodels.customer_master_pymodel import (
+    RestaurantFeedbackRequest,
+)
+from restaurant_agent_runtime.services.ordelo_service.ordelo_service import OrdeloService
+from restaurant_agent_runtime.services.ordelo_service.datamodels.cust_rest_map_pymodel import (
+    CustRestMap,
+)
 
 
 # %% Tool 1: send_welcome_message
@@ -73,6 +76,24 @@ async def send_welcome_message(
         recipient=recipient,
         wa_client=ctx.wa_client,
         rest_ref=rest_ref,
+        operational_lookups=ctx.operational_lookups,
+        delivery_button_label=ctx.delivery_button_label,
+        takeaway_button_label=ctx.takeaway_button_label,
+    )
+
+    return Command(
+        goto=END,
+        update={
+            "rest_ref": rest_ref,
+            "active_agent": "triage_agent",
+            "messages": [
+                ToolMessage(
+                    "Service selection buttons sent (Takeaway/Delivery/Enquiry).",
+                    tool_call_id=tool_call_id,
+                ),
+                AIMessage("/DoNotRespond: Please select how I can help you today."),
+            ],
+        },
     )
 
     return Command(
@@ -115,23 +136,35 @@ async def ask_user_to_select_service(
         recipient=recipient,
         wa_client=ctx.wa_client,
         rest_ref=rest_ref,
+        operational_lookups=ctx.operational_lookups,
+        delivery_button_label=ctx.delivery_button_label,
+        takeaway_button_label=ctx.takeaway_button_label,
     )
 
+
+@tool
+async def ask_user_to_select_enquiry(
+    state: Annotated[dict, InjectedState],
+    tool_call_id: Annotated[str, InjectedToolCallId],
+    runtime: ToolRuntime[ContextSchema],
+):
+    """Show the supported enquiry choices after the customer selects Enquiry."""
+    ctx = runtime.context
+    await select_enquiry_wa_send(
+        recipient=ctx.recipient,
+        wa_client=ctx.wa_client,
+        rest_ref=(state.get("rest_ref") or ctx.rest_ref).lower(),
+        menu=ctx.enquiry_menu,
+    )
     return Command(
         goto=END,
         update={
-            "rest_ref": rest_ref,
-            "active_agent": "triage_agent",
             "messages": [
-                ToolMessage(
-                    "Service selection buttons sent (Takeaway/Delivery/Something Else).",
-                    tool_call_id=tool_call_id,
-                ),
-                AIMessage("/DoNotRespond: Please select how I can help you today."),
-            ],
+                ToolMessage("Enquiry options sent.", tool_call_id=tool_call_id),
+                AIMessage("/DoNotRespond: Waiting for enquiry selection."),
+            ]
         },
     )
-
 
 # %% Tool 3: capture_marketing_consent
 @tool
@@ -139,6 +172,7 @@ async def capture_marketing_consent(
     state: Annotated[dict, InjectedState],
     tool_call_id: Annotated[str, InjectedToolCallId],
     runtime: ToolRuntime[ContextSchema],
+    explicit_subscription: bool = False,
 ):
     """
     Sends marketing consent buttons (Yes/No) to the user.
@@ -146,13 +180,13 @@ async def capture_marketing_consent(
     Do not call if ask_for_consent is false in state.
     """
     # Early exit if the question already asked
-    if not state.get("ask_for_consent", False):
+    if not state.get("ask_for_consent", False) and not explicit_subscription:
         return Command(
             goto=END,
             update={
                 "messages": [
                     ToolMessage(
-                        "Marketing consent already captured. Proceed with termination.",
+                        "Marketing consent prompt is not needed. Proceed with termination.",
                         tool_call_id=tool_call_id,
                     ),
                 ],
@@ -163,6 +197,29 @@ async def capture_marketing_consent(
     recipient = ctx.recipient
     rest_ref = (state.get("rest_ref") or ctx.rest_ref).lower()
 
+    if explicit_subscription:
+        try:
+            consent = CustRestMap.from_cust_id_and_rest_ref(
+                recipient,
+                rest_ref,
+                database_client=ctx.client_ordelo,
+            )
+        except ValueError:
+            consent = None
+        if consent is not None and consent.has_consent:
+            return Command(
+                goto=END,
+                update={
+                    "messages": [
+                        ToolMessage(
+                            "Customer is already subscribed to offers.",
+                            tool_call_id=tool_call_id,
+                        ),
+                        AIMessage("You're already subscribed to offers."),
+                    ]
+                },
+            )
+
     await select_marketing_consent_wa_send(
         recipient=recipient,
         wa_client=ctx.wa_client,
@@ -172,7 +229,7 @@ async def capture_marketing_consent(
     return Command(
         goto=END,
         update={
-            "ask_for_consent": False,  # This flip of flag ensures consent is asked only once
+            "ask_for_consent": False,
             "messages": [
                 ToolMessage(
                     "Marketing consent buttons sent (Yes/No).",
@@ -183,6 +240,53 @@ async def capture_marketing_consent(
         },
     )
 
+
+@tool
+async def submit_restaurant_feedback(
+    description: str,
+    order_reference: str | None,
+    state: Annotated[dict, InjectedState],
+    tool_call_id: Annotated[str, InjectedToolCallId],
+    runtime: ToolRuntime[ContextSchema],
+):
+    """Schedule a restaurant-admin feedback notification through Ordelo."""
+    ctx = runtime.context
+    result = await OrdeloService(
+        rest_ref=ctx.rest_ref,
+        database_client=ctx.client_ordelo,
+        operational_lookups=ctx.operational_lookups,
+    ).submit_restaurant_feedback(
+        RestaurantFeedbackRequest(
+            rest_ref=ctx.rest_ref,
+            cust_id=ctx.recipient,
+            cust_name=state.get("wa_name"),
+            order_reference=order_reference,
+            description=description,
+        )
+    )
+    if result is None:
+        return Command(
+            update={
+                "messages": [
+                    ToolMessage(
+                        "Feedback could not be scheduled. Ask the customer to call the restaurant.",
+                        tool_call_id=tool_call_id,
+                    )
+                ]
+            }
+        )
+    return Command(
+        goto=END,
+        update={
+            "messages": [
+                ToolMessage(
+                    "Feedback submitted to Ordelo for restaurant-admin notification.",
+                    tool_call_id=tool_call_id,
+                ),
+                AIMessage("I've passed your feedback to the restaurant team."),
+            ]
+        },
+    )
 
 # %% Terminate conversation tool (owned exclusively by triage)
 @tool
@@ -242,7 +346,9 @@ async def terminate_conversation(
 triage_tools = [
     send_welcome_message,
     ask_user_to_select_service,
+    ask_user_to_select_enquiry,
     capture_marketing_consent,
+    submit_restaurant_feedback,
     terminate_conversation,
     transfer_to_delivery,
     transfer_to_takeaway,
@@ -253,7 +359,11 @@ def build_triage_agent(*, model, system_prompt: str, extra_tools=()):
         model=model,
         tools=[*triage_tools, *extra_tools],
         system_prompt=system_prompt,
-        middleware=[cleanup_before_model, respond_on_wa],
+        middleware=[
+            render_prompt_middleware(system_prompt),
+            cleanup_before_model,
+            respond_on_wa,
+        ],
         state_schema=AgentState,
         context_schema=ContextSchema,
     )

@@ -31,7 +31,41 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from restaurant_agent_runtime.services.ordelo_service.datamodels.customer_master_pymodel import (
     UpdateCustRestMapRequest,
 )
+from restaurant_agent_runtime.rest_agent.agent_wa_senders import select_enquiry_wa_send
 from restaurant_agent_runtime.services.ordelo_service.ordelo_service import OrdeloService
+
+_ENQUIRY_OPTION_MESSAGES = frozenset(
+    {
+        "I want to share feedback",
+        "I want to know about parking availability",
+        "I want to subscribe for offers",
+    }
+)
+
+
+async def _run_selected_enquiry(
+    *,
+    recipient: str,
+    rest_ref: str,
+    human_msg: str,
+    graph_adapter: GraphAdapter,
+) -> None:
+    """Run a specific enquiry choice through triage without reopening its menu."""
+    await graph_adapter.run_rest_graph_with_custom_msg(
+        recipient=recipient,
+        msgs=[
+            HumanMessage(human_msg),
+            SystemMessage(
+                "The customer has already chosen a specific enquiry option (their choice is the message above). "
+                "Handle it directly per your rules. The enquiry menu has already been shown, so do NOT call "
+                "ask_user_to_select_enquiry again."
+            ),
+        ],
+        state_update_dict={
+            "rest_ref": rest_ref,
+            "active_agent": "triage_agent",
+        },
+    )
 
 
 # %%
@@ -93,9 +127,7 @@ async def admin_collection_ready(
     callback_data_type: type,
     runtime: RestaurantRuntime,
 ):
-    ordelo_app_url = runtime.settings.project.get_ordelo_url(
-        runtime.settings.database_client
-    )
+    ordelo_app_url = runtime.operational_lookups.get_app_url("ORDELO")
     #  admin_order_reciept - creates the callback data
     callback_data = callback_data_type(**json.loads(callback.data))
 
@@ -140,6 +172,47 @@ async def select_service_handler(
 
     active_agent = callback_data_dict.get("active_agent")
 
+    # Treat Enquiry as a triage entry point even when a stale service button
+    # still carries the delivery/takeaway agent from the preceding turn.
+    if callback_data.human_msg == "I have an enquiry":
+        await select_enquiry_wa_send(
+            recipient=recipient,
+            wa_client=wa,
+            rest_ref=rest_ref,
+            menu=runtime.presentation.enquiry_menu,
+        )
+        return
+
+    # Older menus used /SelectService for these buttons. Continue them directly
+    # through triage so an already-open chat does not need one extra click.
+    if callback_data.human_msg in _ENQUIRY_OPTION_MESSAGES:
+        await _run_selected_enquiry(
+            recipient=recipient,
+            rest_ref=rest_ref,
+            human_msg=callback_data.human_msg,
+            graph_adapter=graph_adapter,
+        )
+        return
+
+    order_type = {
+        "delivery_agent": "delivery",
+        "takeaway_agent": "takeaway",
+    }.get(active_agent)
+    if order_type is not None and not runtime.operational_lookups.accepts_new_order(
+        order_type, recipient
+    ):
+        await wa.send_message(
+            to=recipient,
+            text="Sorry, new orders for that service have closed for today. You can still send us an enquiry.",
+        )
+        await select_service_sender(
+            recipient=recipient,
+            wa_client=wa,
+            rest_ref=rest_ref,
+            operational_lookups=runtime.operational_lookups,
+        )
+        return
+
     if rest_ref and active_agent:
         human_msg = callback_data.human_msg
         state_update_dict = {
@@ -161,6 +234,7 @@ async def select_service_handler(
             recipient=recipient,
             wa_client=wa,
             rest_ref=rest_ref,
+            operational_lookups=runtime.operational_lookups,
         )
         return
 
@@ -169,6 +243,38 @@ async def select_service_handler(
             f"Incomplete callback data for /SelectService: {callback_data_dict}"
         )
         return
+
+
+# %% Enquiry selection handler
+@wa_dedup
+async def select_enquiry_handler(
+    wa: WhatsApp,
+    callback,
+    *,
+    callback_data_type: type,
+    graph_adapter: GraphAdapter,
+    runtime: RestaurantRuntime,
+):
+    """Route a chosen enquiry option without reopening the enquiry menu."""
+    recipient = callback.from_user.wa_id
+    callback_data_dict: dict = json.loads(callback.data)
+    try:
+        callback_data = callback_data_type(**callback_data_dict)
+    except Exception as exc:
+        logger.error(
+            "Invalid callback data for /SelectEnquiry: {}, error: {}",
+            callback_data_dict,
+            exc,
+        )
+        return
+
+    rest_ref = callback_data_dict.get("rest_ref") or runtime.identity.rest_ref.lower()
+    await _run_selected_enquiry(
+        recipient=recipient,
+        rest_ref=rest_ref,
+        human_msg=callback_data.human_msg,
+        graph_adapter=graph_adapter,
+    )
 
 
 # %% Marketing consent handler
@@ -203,6 +309,7 @@ async def select_consent_handler(
         ordelo_service = OrdeloService(
             rest_ref=str(rest_ref).upper(),
             database_client=runtime.settings.database_client,
+            operational_lookups=runtime.operational_lookups,
         )
         await ordelo_service.update_cust_rest_map(
             UpdateCustRestMapRequest(

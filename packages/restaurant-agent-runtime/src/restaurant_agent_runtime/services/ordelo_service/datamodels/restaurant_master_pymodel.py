@@ -52,6 +52,11 @@ class RestaurantMaster(BaseModel):
             values["service_hours"] = WeeklySchedule.from_dict(raw, tz=UK_TZ)
         return values
 
+    def accepts_new_order(self, order_type: str, at: datetime.datetime) -> bool:
+        if order_type not in {"delivery", "takeaway"}:
+            raise ValueError(f"Unknown order type: {order_type}")
+        return self.service_hours.accepts_new_orders(at)
+
     @classmethod
     def from_rest_ref(cls, rest_ref: str, *, database_client):
         resp = (
