@@ -5,7 +5,11 @@ from importlib import import_module
 
 from restaurant_agent_runtime.config.bundle import load_settings_bundle
 
-APP = "bnat"
+# APP = "bnat"
+APP = "sfcs"
+
+# %%
+
 identity_modules = {
     "bnat": "bnat_agent.identity",
     "sfcs": "sfcs_agent.identity",

@@ -114,6 +114,7 @@ async def _terminate_stale_thread_candidate(
                 recipient=candidate.recipient,
                 config=config,
                 system_msg=STALE_THREAD_TERMINATION_SYSTEM_MSG,
+                state_update_dict={"active_agent": "triage_agent"},
             )
             task_logger.info("Stale-thread termination completed")
         except asyncio.CancelledError:

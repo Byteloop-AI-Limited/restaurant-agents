@@ -16,7 +16,7 @@ update restaurant_master
 -- set admins = Array['447919202938', '447448440754'],
 set admins = Array['447919202938'],
     rest_stale_active_threads_minutes = 10,
-    city='Orpington',
+    city='dummy',
     service_hours_json = '{
   "mon": [["18:00", "24:00"]],
   "tue": [["18:00", "24:00"]],
@@ -37,13 +37,13 @@ SELECT * FROM ordelo_post('SFCS_APP_URL', '/restaurant-master-cache/reset');
 
 update rider_master
 set is_in_shift = true,
-    town = 'Orpington',
+    town = 'dummy',
     vehicle_type = 'car'
 where rider_name = 'Lohith';
 
 update rider_master
 set is_in_shift = true,
-    town = 'Orpington',
+    town = 'dummy',
     vehicle_type = 'car'
 where rider_name = 'Rahul';
 
