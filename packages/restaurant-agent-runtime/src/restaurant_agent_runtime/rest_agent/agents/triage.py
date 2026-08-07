@@ -118,27 +118,61 @@ async def send_welcome_message(
 
 
 # %% Tool 2: ask_user_to_select_service
+async def _send_service_selection(
+    *,
+    state: dict,
+    runtime: ToolRuntime[ContextSchema],
+    message_before_selection: str | None = None,
+) -> None:
+    """Send an optional customer response before the standard service menu."""
+    ctx = runtime.context
+    message = (message_before_selection or "").strip()
+    if message:
+        await ctx.wa_client.send_message(to=ctx.recipient, text=message)
+
+    await select_service_wa_send(
+        recipient=ctx.recipient,
+        wa_client=ctx.wa_client,
+        rest_ref=(state.get("rest_ref") or ctx.rest_ref).lower(),
+        operational_lookups=ctx.operational_lookups,
+        delivery_button_label=ctx.delivery_button_label,
+        takeaway_button_label=ctx.takeaway_button_label,
+    )
+
+
 @tool
 async def ask_user_to_select_service(
     state: Annotated[dict, InjectedState],
     tool_call_id: Annotated[str, InjectedToolCallId],
     runtime: ToolRuntime[ContextSchema],
+    message_before_selection: str | None = None,
 ):
     """
-    Sends interactive WhatsApp buttons asking user to select service type.
-    MUST be called after every response to guide user to select Takeaway/Delivery/Something Else.
-    """
-    ctx = runtime.context
-    recipient = ctx.recipient
-    rest_ref = (state.get("rest_ref") or ctx.rest_ref).lower()
+    Send interactive WhatsApp buttons asking the customer to select a service.
 
-    await select_service_wa_send(
-        recipient=recipient,
-        wa_client=ctx.wa_client,
-        rest_ref=rest_ref,
-        operational_lookups=ctx.operational_lookups,
-        delivery_button_label=ctx.delivery_button_label,
-        takeaway_button_label=ctx.takeaway_button_label,
+    When answering a direct enquiry first, put the complete customer-facing
+    answer in ``message_before_selection``. The tool sends that text before the
+    buttons and ends the turn, so the menu does not interrupt or duplicate the
+    response. Omit it only when a bare service menu is appropriate.
+    """
+    await _send_service_selection(
+        state=state,
+        runtime=runtime,
+        message_before_selection=message_before_selection,
+    )
+    return Command(
+        goto=END,
+        update={
+            "messages": [
+                ToolMessage(
+                    "Service selection response and buttons sent.",
+                    tool_call_id=tool_call_id,
+                ),
+                AIMessage(
+                    "/DoNotRespond: Customer response and service selection sent."
+                ),
+            ]
+        },
     )
 
 
@@ -245,11 +279,17 @@ async def capture_marketing_consent(
 async def submit_restaurant_feedback(
     description: str,
     order_reference: str | None,
+    acknowledgement_message: str,
     state: Annotated[dict, InjectedState],
     tool_call_id: Annotated[str, InjectedToolCallId],
     runtime: ToolRuntime[ContextSchema],
 ):
-    """Schedule a restaurant-admin feedback notification through Ordelo."""
+    """Schedule feedback through Ordelo, then acknowledge it before the service menu.
+
+    ``acknowledgement_message`` must be a short, customer-facing acknowledgement
+    appropriate to the feedback sentiment. It is sent only after Ordelo accepts
+    the feedback, so it must not promise a response time or delivery to a person.
+    """
     ctx = runtime.context
     result = await OrdeloService(
         rest_ref=ctx.rest_ref,
@@ -265,25 +305,55 @@ async def submit_restaurant_feedback(
         )
     )
     if result is None:
+        if ctx.restaurant_contact_phone:
+            failure_message = (
+                "Sorry, I couldn't pass your feedback to the restaurant team right "
+                f"now. Please call us on {ctx.restaurant_contact_phone}."
+            )
+        else:
+            failure_message = (
+                "Sorry, I couldn't pass your feedback to the restaurant team right "
+                "now. Please try again later or call the restaurant."
+            )
+        await _send_service_selection(
+            state=state,
+            runtime=runtime,
+            message_before_selection=failure_message,
+        )
         return Command(
+            goto=END,
             update={
                 "messages": [
                     ToolMessage(
-                        "Feedback could not be scheduled. Ask the customer to call the restaurant.",
+                        "Feedback could not be scheduled; failure response and service selection sent.",
                         tool_call_id=tool_call_id,
-                    )
+                    ),
+                    AIMessage(
+                        "/DoNotRespond: Feedback failure response and service selection sent."
+                    ),
                 ]
             }
         )
+
+    acknowledgement = acknowledgement_message.strip()
+    if not acknowledgement:
+        acknowledgement = "Thank you for your feedback. I've passed it to the restaurant team."
+    await _send_service_selection(
+        state=state,
+        runtime=runtime,
+        message_before_selection=acknowledgement,
+    )
     return Command(
         goto=END,
         update={
             "messages": [
                 ToolMessage(
-                    "Feedback submitted to Ordelo for restaurant-admin notification.",
+                    "Feedback submitted to Ordelo; acknowledgement and service selection sent.",
                     tool_call_id=tool_call_id,
                 ),
-                AIMessage("I've passed your feedback to the restaurant team."),
+                AIMessage(
+                    "/DoNotRespond: Feedback acknowledgement and service selection sent."
+                ),
             ]
         },
     )

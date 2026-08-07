@@ -155,6 +155,13 @@ existing `GraphAdapterFactory` callable.
 Shared-runtime contract tests own these node names, routes, and ordered tool
 lists. App tests own prompt presence and exact runtime/client composition.
 
+For a standalone triage enquiry with no chosen service,
+`ask_user_to_select_service(message_before_selection=...)` sends the complete
+customer-facing answer before its interactive buttons and ends the turn. After
+Ordelo accepts feedback, `submit_restaurant_feedback` likewise sends its
+model-written acknowledgement before the same menu. This preserves mandatory
+service selection without interrupting an answer or acknowledgement.
+
 Owner-approved Overwatch recipients bypass venue-hours and new-order-cutoff
 guards across service selection, transfers, and menu sends, so an end-to-end
 test can run at any time. This bypass is restricted to the shared allow-list
