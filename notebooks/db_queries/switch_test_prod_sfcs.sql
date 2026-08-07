@@ -80,7 +80,10 @@ set admins = Array[ '447446933210','447919202938','447827180109', '447769081769'
 }'::jsonb
 where rest_ref = 'SFCS';
 
-update ordelo_config set config_value = 'https://sfcs-agg.ordelo.app' where config_key = 'SFCS_APP_URL';
+-- update ordelo_config set config_value = 'https://sfcs-agg.ordelo.app' where config_key = 'SFCS_APP_URL';
+update ordelo_config set config_value = 'https://sfcs-agent.fly.dev' where config_key = 'SFCS_APP_URL';
+
+
 
 update rider_master
 set is_in_shift = true,
