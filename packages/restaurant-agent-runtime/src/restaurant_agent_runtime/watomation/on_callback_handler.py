@@ -27,12 +27,20 @@ from restaurant_agent_runtime.watomation.dedup import wa_dedup
 
 # %% Define classes
 from pywa.types import CallbackButton
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from restaurant_agent_runtime.rest_agent.agents.agent_harness import (
+    send_new_order_closed_message,
+    send_new_order_menu,
+)
 from restaurant_agent_runtime.services.ordelo_service.datamodels.customer_master_pymodel import (
     UpdateCustRestMapRequest,
 )
 from restaurant_agent_runtime.rest_agent.agent_wa_senders import select_enquiry_wa_send
 from restaurant_agent_runtime.services.ordelo_service.ordelo_service import OrdeloService
+from restaurant_agent_runtime.services.thread_management import ThreadHandler
+from restaurant_agent_runtime.services.thread_management.graph_config import (
+    get_config_for_recipient,
+)
 
 _ENQUIRY_OPTION_MESSAGES = frozenset(
     {
@@ -201,15 +209,9 @@ async def select_service_handler(
     if order_type is not None and not runtime.operational_lookups.accepts_new_order(
         order_type, recipient
     ):
-        await wa.send_message(
-            to=recipient,
-            text="Sorry, new orders for that service have closed for today. You can still send us an enquiry.",
-        )
-        await select_service_sender(
+        await send_new_order_closed_message(
             recipient=recipient,
-            wa_client=wa,
-            rest_ref=rest_ref,
-            operational_lookups=runtime.operational_lookups,
+            wa_client=runtime.async_wa_client,
         )
         return
 
@@ -219,9 +221,52 @@ async def select_service_handler(
             "rest_ref": rest_ref,
             "active_agent": active_agent,
         }
-        msgs = [
-            HumanMessage(human_msg),
-        ]
+        if active_agent == "takeaway_agent":
+            pool = await runtime.settings.database.get_pool()
+            config, _ = await get_config_for_recipient(
+                recipient, pool, agent=runtime.identity.rest_ref
+            )
+            await graph_adapter.run_rest_graph_with_custom_msg(
+                recipient=recipient,
+                pool=pool,
+                config=config,
+                msgs=[HumanMessage(human_msg)],
+                state_update_dict=state_update_dict,
+                persist_only=True,
+            )
+            result = await send_new_order_menu(
+                recipient=recipient,
+                state=state_update_dict,
+                rest_ref=rest_ref,
+                wa_client=runtime.async_wa_client,
+                logo_url=runtime.presentation.logo_url or "",
+                operational_lookups=runtime.operational_lookups,
+                thread_handler=ThreadHandler(pool, agent=runtime.identity.rest_ref),
+                order_type="takeaway",
+            )
+            marker = {
+                "sent": "/DoNotRespond: Please select items from the menu to place your order.",
+                "closed": "/DoNotRespond: Ordering is currently closed.",
+                "failed": "/DoNotRespond: The collection menu could not be sent.",
+            }[result]
+            await graph_adapter.run_rest_graph_with_custom_msg(
+                recipient=recipient,
+                pool=pool,
+                config=config,
+                msgs=[AIMessage(marker)],
+                persist_only=True,
+            )
+            return
+
+        msgs = [HumanMessage(human_msg)]
+        if active_agent == "delivery_agent":
+            msgs.append(
+                SystemMessage(
+                    "Runtime has already approved new delivery ordering for this "
+                    "recipient. Do not ask for the date or time and do not reassess "
+                    "hours. Start the address flow immediately."
+                )
+            )
         await graph_adapter.run_rest_graph_with_custom_msg(
             recipient=recipient,
             msgs=msgs,

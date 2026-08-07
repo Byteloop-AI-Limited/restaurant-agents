@@ -49,14 +49,18 @@ for the complete ownership model.
 3. The adapter compiles the pre-built three-node graph with a PostgreSQL
    checkpointer for the operation, resolves the app-prefixed thread, and creates
    `ContextSchema` from the exact `RestaurantRuntime`.
-4. `route_initial()` follows the persisted `active_agent`. Selecting Delivery or
-   calling `transfer_to_delivery` sets it to `delivery_agent`.
+4. `route_initial()` follows the persisted `active_agent`. Delivery selection
+   and `transfer_to_delivery` first use the runtime-owned availability policy.
+   A closed normal recipient receives `Ordering is currently closed.` without a model
+   turn; an approved recipient enters `delivery_agent` with availability already
+   final.
 5. `build_delivery_agent()` creates the native LangChain agent with the
    app-owned complete prompt, shared state/context schemas, common WhatsApp
    middleware, thirteen ordered default tools, and any app-owned extra tools.
 6. Address tools capture, update, and confirm customer location. The minimum
-   order tool checks delivery eligibility before the delivery menu tool sends a
-   restaurant-specific menu link.
+   order tool and delivery menu tool retain the final deterministic availability
+   guard before sending a restaurant-specific menu link; the model never asks
+   the customer for a date or time to decide availability.
 7. Payment, order, and rider tools read and update shared graph state and use
    injected runtime resources rather than application imports or module-global
    WhatsApp clients.

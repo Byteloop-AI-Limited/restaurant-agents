@@ -40,19 +40,21 @@ for the complete ownership model.
 
 ## Detailed Flow Explanation
 
-1. Selecting Collection/Takeaway is handled by `select_service_handler()`, which
-   updates `active_agent` to `takeaway_agent` and invokes the injected
-   `GraphAdapter`.
-2. The standard graph routes to the takeaway node. `build_takeaway_agent()`
-   constructs a native LangChain agent with the app-owned complete prompt,
-   shared schemas and middleware, four default tools, and optional app-owned
-   extra tools.
-3. `send_takeaway_menu_tool()` delegates to the shared menu helper with
-   `order_type="takeaway"`. It derives recipient, thread, restaurant reference,
-   runtime WhatsApp client, and logo from `ContextSchema`.
-4. A successful menu send ends the turn with a `/DoNotRespond:` marker while
-   the customer orders through WhatsApp. A menu-send failure sends fallback
-   text and ends the turn.
+1. Selecting Collection/Takeaway is handled deterministically by
+   `select_service_handler()`. It calls the runtime-owned availability policy;
+   a normal recipient who is unavailable receives `Ordering is currently closed.`, while
+   an approved or Overwatch recipient proceeds without an LLM availability
+   check.
+2. An approved callback persists `active_agent="takeaway_agent"` and the
+   selection without invoking the model, then sends the collection menu through
+   the exact runtime-bound WhatsApp client.
+3. Typed collection intent reaches `transfer_to_takeaway`, which uses the same
+   deterministic sender and ends the turn. The takeaway agent remains available
+   for existing order, payment, and status work.
+4. `send_takeaway_menu_tool()` uses the same final availability guard for an
+   already-active conversation. It sends either the menu, the exact closed message,
+   or the concise retry-later fallback; it never asks the customer for the date
+   or time.
 5. `verify_if_payment_complete()` reads order summary, payment-link, and payment
    state to tell the model whether payment is complete, pending, or not yet
    ready.

@@ -80,9 +80,30 @@ def create_overwatch_filter(runtime: RestaurantRuntime):
     )
 
 
+_ORDERING_TERMS = (
+    "delivery",
+    "collection",
+    "takeaway",
+    "pickup",
+    "pick up",
+    "order",
+    "menu",
+)
+
+
+def is_ordering_request(msg: Message) -> bool:
+    """Return whether an after-hours text is an attempt to place an order."""
+    text = (getattr(msg, "text", None) or "").casefold()
+    return any(term in text for term in _ORDERING_TERMS)
+
+
 async def send_closed_message(
     wa: WhatsApp, msg: Message, *, runtime: RestaurantRuntime
 ):
+    if is_ordering_request(msg):
+        await wa.send_message(to=msg.sender, text="Ordering is currently closed.")
+        return
+
     schedule = runtime.operational_lookups.get_restaurant_master().service_hours
     closed_text = schedule.format_today(datetime.now(UK_TZ))
     await wa.send_message(

@@ -208,6 +208,7 @@ async def run_rest_graph_with_custom_msg(
     msgs: list[BaseMessage] = None,
     state_update_dict: dict = None,
     config: dict = None,
+    persist_only: bool = False,
     *,
     runtime: RestaurantRuntime,
     graph_builder,
@@ -270,6 +271,22 @@ async def run_rest_graph_with_custom_msg(
         msgs.append(HumanMessage(human_msg))
 
     ip_msgs = {"messages": msgs}
+
+    if persist_only:
+        # Callback-originated deterministic actions need an auditable state
+        # transition but must not ask the model to make a second availability
+        # decision. Repair first so the persisted selection is not removed as
+        # part of a malformed historic tool-call tail.
+        await _repair_malformed_tool_call_tail(graph=graph, config=config)
+        persisted_update = dict(state_update_dict or {})
+        if msgs:
+            persisted_update["messages"] = [
+                *(persisted_update.get("messages") or []),
+                *msgs,
+            ]
+        if persisted_update:
+            await graph.aupdate_state(config, persisted_update)
+        return None
 
     # Update state if updates provided
     if state_update_dict:

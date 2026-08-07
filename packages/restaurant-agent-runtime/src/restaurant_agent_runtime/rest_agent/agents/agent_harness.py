@@ -167,53 +167,37 @@ async def _send_menu_tool(
     runtime: ToolRuntime[ContextSchema],
     order_type: Literal["delivery", "takeaway"],
 ) -> Command:
-    from restaurant_agent_runtime.rest_agent.agent_wa_senders import send_restaurant_menu
-
     ctx = runtime.context
-    if not ctx.operational_lookups.accepts_new_order(order_type, ctx.recipient):
-        await ctx.wa_client.send_message(
-            to=ctx.recipient,
-            text="Sorry, new orders for that service have closed for today. You can still send us an enquiry.",
-            reply_to_message_id=state.get("reply_to_msg_id"),
-        )
+    result = await send_new_order_menu(
+        recipient=ctx.recipient,
+        state=state,
+        rest_ref=state.get("rest_ref") or ctx.rest_ref,
+        wa_client=ctx.wa_client,
+        logo_url=ctx.restaurant_logo_url,
+        operational_lookups=ctx.operational_lookups,
+        thread_handler=ctx.thread_handler,
+        order_type=order_type,
+        reply_to_message_id=state.get("reply_to_msg_id"),
+    )
+    if result == "closed":
         return Command(
             goto=END,
             update={
                 "messages": [
                     ToolMessage(
-                        "New order menu blocked because the service order cutoff has passed.",
+                        "New order menu blocked because the service is currently closed.",
                         tool_call_id=tool_call_id,
                     )
                 ]
             },
         )
-    recipient = ctx.recipient
-    thread_id, _ = await ctx.thread_handler.get_or_create_thread(recipient)
-    min_order_value = _normalize_min_order_value(state.get("min_order_value"))
-    rest_ref = state.get("rest_ref") or ctx.rest_ref
-
-    menu_err = await send_restaurant_menu(
-        recipient=recipient,
-        minimum_order=min_order_value,
-        thread_id=str(thread_id),
-        rest_ref=rest_ref,
-        order_type=order_type,
-        wa_client=ctx.wa_client,
-        logo_url=ctx.restaurant_logo_url,
-        operational_lookups=ctx.operational_lookups,
-    )
-    if isinstance(menu_err, ValueError):
-        await ctx.wa_client.send_message(
-            to=recipient,
-            text="Sorry, I couldn't send the menu link right now. Please try again later.",
-            reply_to_message_id=state.get("reply_to_msg_id"),
-        )
+    if result == "failed":
         return Command(
             goto=END,
             update={
                 "messages": [
                     ToolMessage(
-                        f"Failed to send restaurant menu: {menu_err}",
+                        "Failed to send restaurant menu.",
                         tool_call_id=tool_call_id,
                     ),
                 ],
@@ -235,6 +219,66 @@ async def _send_menu_tool(
             ],
         },
     )
+
+
+async def send_new_order_closed_message(
+    *,
+    recipient: str,
+    wa_client: WhatsApp,
+    reply_to_message_id: str | None = None,
+) -> str:
+    """Send the authoritative unavailable-service response without an LLM turn."""
+    text = "Ordering is currently closed."
+    await wa_client.send_message(
+        to=recipient,
+        text=text,
+        reply_to_message_id=reply_to_message_id,
+    )
+    return text
+
+
+async def send_new_order_menu(
+    *,
+    recipient: str,
+    state: dict,
+    rest_ref: str,
+    wa_client: WhatsApp,
+    logo_url: str,
+    operational_lookups: OperationalLookupCache,
+    thread_handler: Any,
+    order_type: Literal["delivery", "takeaway"],
+    reply_to_message_id: str | None = None,
+) -> Literal["sent", "closed", "failed"]:
+    """Send a menu through the exact runtime after a final availability check."""
+    from restaurant_agent_runtime.rest_agent.agent_wa_senders import send_restaurant_menu
+
+    if not operational_lookups.accepts_new_order(order_type, recipient):
+        await send_new_order_closed_message(
+            recipient=recipient,
+            wa_client=wa_client,
+            reply_to_message_id=reply_to_message_id,
+        )
+        return "closed"
+
+    thread_id, _ = await thread_handler.get_or_create_thread(recipient)
+    menu_err = await send_restaurant_menu(
+        recipient=recipient,
+        minimum_order=_normalize_min_order_value(state.get("min_order_value")),
+        thread_id=str(thread_id),
+        rest_ref=rest_ref,
+        order_type=order_type,
+        wa_client=wa_client,
+        logo_url=logo_url,
+        operational_lookups=operational_lookups,
+    )
+    if isinstance(menu_err, ValueError):
+        await wa_client.send_message(
+            to=recipient,
+            text="Sorry, I couldn't send the menu link right now. Please try again later.",
+            reply_to_message_id=reply_to_message_id,
+        )
+        return "failed"
+    return "sent"
 
 
 async def send_restaurant_menu_tool(
@@ -275,7 +319,7 @@ def _run_transfer_guards(state: dict, tool_call_id: str) -> Command | None:
     return None
 
 
-def transfer_to_delivery(
+async def transfer_to_delivery(
     runtime: ToolRuntime[ContextSchema],
 ) -> Command:
     """Transfer the conversation to the delivery agent.
@@ -287,19 +331,30 @@ def transfer_to_delivery(
     if not runtime.context.operational_lookups.accepts_new_order(
         "delivery", runtime.context.recipient
     ):
+        await send_new_order_closed_message(
+            recipient=runtime.context.recipient,
+            wa_client=runtime.context.wa_client,
+        )
         return Command(
+            graph=Command.PARENT,
+            goto=END,
             update={
                 "messages": [
                     ToolMessage(
-                        "Delivery handoff blocked because new delivery orders are closed. Offer an enquiry instead.",
+                        "Delivery handoff blocked because ordering is currently closed.",
                         tool_call_id=runtime.tool_call_id,
-                    )
+                    ),
+                    AIMessage("/DoNotRespond: Ordering is currently closed."),
                 ]
             }
         )
 
     transfer_message = ToolMessage(
-        content="Transferred to delivery agent. Customer wants food delivery.",
+        content=(
+            "Transferred to delivery agent. Runtime has already approved new-order "
+            "availability. Start the address flow immediately; do not ask for the date "
+            "or time and do not reassess hours."
+        ),
         tool_call_id=runtime.tool_call_id,
     )
 
@@ -352,7 +407,7 @@ def _transfer_check_delivery_retain(state: dict, tool_call_id: str) -> Command |
     return None
 
 
-def transfer_to_takeaway(
+async def transfer_to_takeaway(
     state: Annotated[dict, InjectedState],
     runtime: ToolRuntime[ContextSchema],
 ) -> Command:
@@ -362,53 +417,18 @@ def transfer_to_takeaway(
     """
     if (guard := _run_transfer_guards(state, runtime.tool_call_id)) is not None:
         return guard
-    if not runtime.context.operational_lookups.accepts_new_order(
-        "takeaway", runtime.context.recipient
-    ):
-        return Command(
-            update={
-                "messages": [
-                    ToolMessage(
-                        "Takeaway handoff blocked because new takeaway orders are closed. Offer an enquiry instead.",
-                        tool_call_id=runtime.tool_call_id,
-                    )
-                ]
-            }
-        )
-
-    _current_active_agent = state.get("active_agent", "triage_agent")
-    _current_rest_ref = state.get("rest_ref")
-
-    transfer_message = ToolMessage(
-        content=f"Transferred to takeaway agent. Customer wants takeaway/collection. Current agent: {_current_active_agent}, Restaurant: {_current_rest_ref}",
+    menu_command = await _send_menu_tool(
+        state=state,
         tool_call_id=runtime.tool_call_id,
+        runtime=runtime,
+        order_type="takeaway",
     )
-
-    logger.info(
-        f"Transferring to takeaway agent for recipient: {runtime.context.recipient}"
-    )
-
-    update_messages = [transfer_message]
-
-    # Get the last AI message to include in the handoff
-    last_ai_message = next(
-        (
-            msg
-            for msg in reversed(runtime.state["messages"])
-            if isinstance(msg, AIMessage)
-        ),
-        None,
-    )
-    if last_ai_message:
-        update_messages.insert(0, last_ai_message)
-
     return Command(
-        # Jump to the parent orchestration graph where takeaway_agent is defined.
         graph=Command.PARENT,
-        goto="takeaway_agent",
+        goto=END,
         update={
             "active_agent": "takeaway_agent",
-            "messages": update_messages,
+            "messages": menu_command.update["messages"],
         },
     )
 

@@ -77,56 +77,88 @@ class FakeOperationalLookups:
         self.takeaway_open = takeaway_open
         self.overwatch_recipients = set(overwatch_recipients)
 
-    def accepts_new_order(self, order_type, recipient):
+    def accepts_new_order(self, order_type, recipient, at=None):
         if recipient in self.overwatch_recipients:
             return True
         return self.delivery_open if order_type == "delivery" else self.takeaway_open
 
-
-def test_transfer_to_delivery_blocks_closed_recipient_but_allows_overwatch():
+async def test_transfer_to_delivery_blocks_closed_recipient_but_allows_overwatch():
     ops = FakeOperationalLookups(delivery_open=False, overwatch_recipients={"447000000099"})
 
     blocked_runtime = SimpleNamespace(
         state={"retain_thread": False, "messages": []},
         tool_call_id="tc-1",
-        context=SimpleNamespace(recipient="447000000001", operational_lookups=ops),
+        context=SimpleNamespace(
+            recipient="447000000001",
+            operational_lookups=ops,
+            wa_client=AsyncMock(),
+        ),
     )
-    blocked = transfer_to_delivery(blocked_runtime)
+    blocked = await transfer_to_delivery(blocked_runtime)
     assert "closed" in blocked.update["messages"][0].content
-    assert blocked.goto == ()
+    assert blocked.goto == "__end__"
+    blocked_runtime.context.wa_client.send_message.assert_awaited_once_with(
+        to="447000000001",
+        text="Ordering is currently closed.",
+        reply_to_message_id=None,
+    )
 
     overwatch_runtime = SimpleNamespace(
         state={"retain_thread": False, "messages": []},
         tool_call_id="tc-2",
-        context=SimpleNamespace(recipient="447000000099", operational_lookups=ops),
+        context=SimpleNamespace(
+            recipient="447000000099",
+            operational_lookups=ops,
+            wa_client=AsyncMock(),
+        ),
     )
-    allowed = transfer_to_delivery(overwatch_runtime)
+    allowed = await transfer_to_delivery(overwatch_runtime)
     assert allowed.goto == "delivery_agent"
     assert allowed.update["active_agent"] == "delivery_agent"
 
 
-def test_transfer_to_takeaway_blocks_closed_recipient_but_allows_overwatch():
+async def test_transfer_to_takeaway_blocks_closed_recipient_but_allows_overwatch(monkeypatch):
     ops = FakeOperationalLookups(takeaway_open=False, overwatch_recipients={"447000000099"})
 
     blocked_state = {"retain_thread": False, "messages": []}
     blocked_runtime = SimpleNamespace(
         state=blocked_state,
         tool_call_id="tc-1",
-        context=SimpleNamespace(recipient="447000000001", operational_lookups=ops),
+        context=SimpleNamespace(
+            recipient="447000000001",
+            operational_lookups=ops,
+            wa_client=AsyncMock(),
+            thread_handler=AsyncMock(),
+            rest_ref="BNAT",
+            restaurant_logo_url="",
+        ),
     )
-    blocked = transfer_to_takeaway(blocked_state, blocked_runtime)
+    blocked = await transfer_to_takeaway(blocked_state, blocked_runtime)
     assert "closed" in blocked.update["messages"][0].content
-    assert blocked.goto == ()
+    assert blocked.goto == "__end__"
 
     overwatch_state = {"retain_thread": False, "messages": [], "active_agent": "triage_agent"}
     overwatch_runtime = SimpleNamespace(
         state=overwatch_state,
         tool_call_id="tc-2",
-        context=SimpleNamespace(recipient="447000000099", operational_lookups=ops),
+        context=SimpleNamespace(
+            recipient="447000000099",
+            operational_lookups=ops,
+            wa_client=AsyncMock(),
+            thread_handler=AsyncMock(),
+            rest_ref="BNAT",
+            restaurant_logo_url="",
+        ),
     )
-    allowed = transfer_to_takeaway(overwatch_state, overwatch_runtime)
-    assert allowed.goto == "takeaway_agent"
+    overwatch_runtime.context.thread_handler.get_or_create_thread = AsyncMock(
+        return_value=("thread-1", False)
+    )
+    sender = AsyncMock(return_value=None)
+    monkeypatch.setattr(agent_wa_senders, "send_restaurant_menu", sender)
+    allowed = await transfer_to_takeaway(overwatch_state, overwatch_runtime)
+    assert allowed.goto == "__end__"
     assert allowed.update["active_agent"] == "takeaway_agent"
+    sender.assert_awaited_once()
 
 
 async def test_send_restaurant_menu_tool_blocks_closed_recipient_but_allows_overwatch(
@@ -156,7 +188,7 @@ async def test_send_restaurant_menu_tool_blocks_closed_recipient_but_allows_over
         tool_call_id="tc-1",
         runtime=_runtime("447000000001"),
     )
-    assert "cutoff" in blocked_cmd.update["messages"][0].content
+    assert "closed" in blocked_cmd.update["messages"][0].content
     sender.assert_not_awaited()
 
     allowed_cmd = await send_restaurant_menu_tool(

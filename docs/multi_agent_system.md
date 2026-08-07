@@ -163,6 +163,12 @@ and is implemented once, as `OperationalLookupCache.accepts_new_order` and
 calls one of these two methods rather than re-checking
 `is_overwatch_recipient` inline.
 
+New-order availability is determined before the model is involved. An approved
+collection callback or transfer sends its menu directly; an approved delivery
+flow starts address capture/confirmation; and a closed normal recipient gets a
+single `Ordering is currently closed.` message. The model never asks a customer
+for the current date or time to decide whether a new order is available.
+
 ## Customization Contract
 
 ### Change only wording or policy

@@ -2,6 +2,7 @@
 
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
@@ -261,6 +262,44 @@ async def test_malformed_tool_call_repair_removes_the_persisted_tail(core_runner
     assert [message.id for message in updates[0]["values"]["messages"]] == [
         "assistant-call",
         "human-interruption",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_persist_only_updates_state_without_invoking_the_model(core_runner):
+    updates = []
+    graph = SimpleNamespace(
+        aupdate_state=AsyncMock(side_effect=lambda config, values: updates.append((config, values)))
+    )
+    core_runner.AsyncPostgresSaver = lambda _pool: object()
+    core_runner.get_config_for_recipient = AsyncMock(
+        return_value=({"configurable": {"thread_id": "thread-1"}}, False)
+    )
+    core_runner._repair_malformed_tool_call_tail = AsyncMock(return_value=False)
+    graph_builder = SimpleNamespace(compile=lambda **_: graph)
+    runtime = SimpleNamespace(
+        settings=SimpleNamespace(database=SimpleNamespace(get_pool=AsyncMock(return_value=object()))),
+        identity=SimpleNamespace(rest_ref="SFCS"),
+    )
+
+    result = await core_runner.run_rest_graph_with_custom_msg(
+        recipient="447000000001",
+        msgs=[HumanMessage("I want takeaway")],
+        state_update_dict={"active_agent": "takeaway_agent"},
+        persist_only=True,
+        runtime=runtime,
+        graph_builder=graph_builder,
+    )
+
+    assert result is None
+    assert updates == [
+        (
+            {"configurable": {"thread_id": "thread-1"}},
+            {
+                "active_agent": "takeaway_agent",
+                "messages": [HumanMessage("I want takeaway")],
+            },
+        )
     ]
 
 

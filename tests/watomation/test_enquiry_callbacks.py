@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import ANY, AsyncMock
 
 import pytest
-from langchain_core.messages import SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 
 from restaurant_agent_runtime import EnquiryMenu, EnquiryOption
 from restaurant_agent_runtime.rest_agent.agent_wa_senders import (
@@ -152,20 +152,19 @@ class FakeOperationalLookups:
         self.takeaway_open = takeaway_open
         self.overwatch_recipients = set(overwatch_recipients)
 
-    def accepts_new_order(self, order_type, recipient):
+    def accepts_new_order(self, order_type, recipient, at=None):
         if recipient in self.overwatch_recipients:
             return True
         return self.delivery_open if order_type == "delivery" else self.takeaway_open
 
-
 @pytest.mark.asyncio
-async def test_closed_service_resend_passes_operational_lookups_to_the_sender():
-    """The order-cutoff resend must let an Overwatch recipient through too."""
+async def test_closed_service_sends_only_the_deterministic_closed_message():
     ops = FakeOperationalLookups(delivery_open=False)
     graph_adapter = SimpleNamespace(run_rest_graph_with_custom_msg=AsyncMock())
     runtime = SimpleNamespace(
         identity=SimpleNamespace(rest_ref="BNAT"),
         operational_lookups=ops,
+        async_wa_client=SimpleNamespace(send_message=AsyncMock()),
     )
     select_service_sender = AsyncMock()
     callback = _callback(
@@ -188,13 +187,63 @@ async def test_closed_service_resend_passes_operational_lookups_to_the_sender():
         select_service_sender=select_service_sender,
     )
 
-    select_service_sender.assert_awaited_once_with(
-        recipient="447000000001",
-        wa_client=wa,
-        rest_ref="bnat",
-        operational_lookups=ops,
+    runtime.async_wa_client.send_message.assert_awaited_once_with(
+        to="447000000001",
+        text="Ordering is currently closed.",
+        reply_to_message_id=None,
     )
+    select_service_sender.assert_not_awaited()
     graph_adapter.run_rest_graph_with_custom_msg.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_takeaway_callback_persists_and_sends_menu_without_model(monkeypatch):
+    ops = FakeOperationalLookups(takeaway_open=True)
+    graph_adapter = SimpleNamespace(run_rest_graph_with_custom_msg=AsyncMock())
+    pool = object()
+    runtime = SimpleNamespace(
+        identity=SimpleNamespace(rest_ref="SFCS"),
+        operational_lookups=ops,
+        async_wa_client=SimpleNamespace(),
+        settings=SimpleNamespace(database=SimpleNamespace(get_pool=AsyncMock(return_value=pool))),
+        presentation=SimpleNamespace(logo_url="logo"),
+    )
+    monkeypatch.setattr(
+        on_callback_handler,
+        "get_config_for_recipient",
+        AsyncMock(return_value=({"configurable": {"thread_id": "thread-1"}}, False)),
+    )
+    menu_sender = AsyncMock(return_value="sent")
+    monkeypatch.setattr(on_callback_handler, "send_new_order_menu", menu_sender)
+
+    callback = _callback(
+        callback_id="takeaway-direct",
+        data={
+            "action": "/SelectService",
+            "rest_ref": "sfcs",
+            "active_agent": "takeaway_agent",
+            "human_msg": "I want takeaway",
+        },
+    )
+
+    await on_callback_handler.select_service_handler(
+        SimpleNamespace(),
+        callback,
+        callback_data_type=CallbackButtonData,
+        graph_adapter=graph_adapter,
+        runtime=runtime,
+        select_service_sender=AsyncMock(),
+    )
+
+    assert graph_adapter.run_rest_graph_with_custom_msg.await_count == 2
+    first = graph_adapter.run_rest_graph_with_custom_msg.await_args_list[0].kwargs
+    assert first["persist_only"] is True
+    assert first["state_update_dict"]["active_agent"] == "takeaway_agent"
+    assert isinstance(first["msgs"][0], HumanMessage)
+    second = graph_adapter.run_rest_graph_with_custom_msg.await_args_list[1].kwargs
+    assert second["persist_only"] is True
+    assert "/DoNotRespond:" in second["msgs"][0].content
+    menu_sender.assert_awaited_once()
 
 
 @pytest.mark.asyncio
