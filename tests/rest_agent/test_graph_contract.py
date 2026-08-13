@@ -40,7 +40,7 @@ STANDARD_TOOLS = {
         "calculate_min_order_value",
         "send_restaurant_menu_tool",
         "verify_if_payment_complete",
-        "send_updates_to_customer",
+        "update_customer",
         "check_delivery_driver_allocation_status",
         "send_rider_live_location_link",
         "transfer_to_takeaway",
@@ -48,6 +48,7 @@ STANDARD_TOOLS = {
     ),
     "takeaway.py": (
         "verify_if_payment_complete",
+        "update_customer",
         "send_takeaway_menu_tool",
         "transfer_to_delivery",
         "transfer_to_triage",
@@ -155,6 +156,20 @@ def test_each_app_owns_complete_non_empty_prompts(app_name, rest_agent_dir):
         prompt_path = rest_agent_dir / "prompts" / prompt_filename
         assert prompt_path.read_text().strip(), (app_name, prompt_filename)
         assert prompt_filename in recipe_source
+
+
+@pytest.mark.parametrize(("app_name", "rest_agent_dir"), APP_REST_AGENT_DIRS)
+def test_specialist_prompts_keep_retained_orders_with_the_specialist(
+    app_name, rest_agent_dir
+):
+    prompt_dir = rest_agent_dir / "prompts"
+    for prompt_filename in (
+        "delivery_multiagent_prompt.md",
+        "takeaway_agent_prompt.md",
+    ):
+        prompt = (prompt_dir / prompt_filename).read_text()
+        assert "`retain_thread=True`" in prompt, (app_name, prompt_filename)
+        assert "`update_customer(message=...)`" in prompt, (app_name, prompt_filename)
 
 
 @pytest.mark.parametrize(("app_name", "agent_dir"), AGENT_IMPLEMENTATIONS)

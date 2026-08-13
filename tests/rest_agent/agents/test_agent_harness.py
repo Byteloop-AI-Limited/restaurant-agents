@@ -2,7 +2,7 @@
 Unit tests for rest_agent.agents.agent_harness pure helpers
     . Verifies _normalize_min_order_value coerces strings, currency-prefixed values,
       None, empty string, and falls back to 0.0 on garbage
-    . Verifies _transfer_check_delivery_retain blocks transfer when retain_thread is set
+    . Verifies _transfer_check_retained_specialist_work blocks handoff when retain_thread is set
     . Verifies _run_transfer_guards aggregates guard results
     . Verifies transfer_to_delivery/transfer_to_takeaway and the menu tools block a
       normal recipient outside service hours but let an Overwatch recipient through
@@ -20,10 +20,12 @@ from restaurant_agent_runtime.rest_agent import agent_wa_senders
 from restaurant_agent_runtime.rest_agent.agents.agent_harness import (
     _normalize_min_order_value,
     _run_transfer_guards,
-    _transfer_check_delivery_retain,
+    _transfer_check_retained_specialist_work,
     send_restaurant_menu_tool,
     transfer_to_delivery,
     transfer_to_takeaway,
+    transfer_to_triage,
+    update_customer,
 )
 
 
@@ -46,18 +48,20 @@ def test_normalize_min_order_value_returns_zero_on_garbage():
     assert _normalize_min_order_value("abc!@#") == 0.0
 
 
-def test_transfer_check_delivery_retain_returns_block_when_retained():
-    cmd = _transfer_check_delivery_retain({"retain_thread": True}, tool_call_id="tc-1")
+def test_transfer_check_retained_specialist_work_returns_block_when_retained():
+    cmd = _transfer_check_retained_specialist_work(
+        {"retain_thread": True}, tool_call_id="tc-1"
+    )
 
     assert cmd is not None
     assert cmd.update["messages"][0].tool_call_id == "tc-1"
 
 
-def test_transfer_check_delivery_retain_returns_none_when_not_retained():
-    assert (
-        _transfer_check_delivery_retain({"retain_thread": False}, tool_call_id="tc-1")
-        is None
-    )
+def test_transfer_check_retained_specialist_work_allows_false_or_missing_state():
+    assert _transfer_check_retained_specialist_work(
+        {"retain_thread": False}, tool_call_id="tc-1"
+    ) is None
+    assert _transfer_check_retained_specialist_work({}, tool_call_id="tc-1") is None
 
 
 def test_run_transfer_guards_blocks_when_delivery_retained():
@@ -67,6 +71,43 @@ def test_run_transfer_guards_blocks_when_delivery_retained():
 
 def test_run_transfer_guards_returns_none_when_all_clear():
     assert _run_transfer_guards({"retain_thread": False}, "tc-1") is None
+
+
+async def test_update_customer_sends_once_and_ends_without_state_changes():
+    wa_client = AsyncMock()
+    runtime = SimpleNamespace(
+        context=SimpleNamespace(recipient="447000000001", wa_client=wa_client)
+    )
+    state = {"reply_to_msg_id": "message-1", "retain_thread": True}
+
+    result = await update_customer(
+        message="Your rider has been assigned.",
+        state=state,
+        tool_call_id="tc-1",
+        runtime=runtime,
+    )
+
+    wa_client.send_message.assert_awaited_once_with(
+        to="447000000001",
+        text="Your rider has been assigned.",
+        reply_to_message_id="message-1",
+    )
+    assert result.goto == "__end__"
+    assert state == {"reply_to_msg_id": "message-1", "retain_thread": True}
+    assert "/DoNotRespond:" in result.update["messages"][-1].content
+
+
+def test_transfer_to_triage_is_blocked_while_specialist_work_is_retained():
+    runtime = SimpleNamespace(
+        state={"retain_thread": True, "messages": []},
+        tool_call_id="tc-1",
+        context=SimpleNamespace(recipient="447000000001"),
+    )
+
+    result = transfer_to_triage(runtime)
+
+    assert "active_agent" not in result.update
+    assert "Stay with the current specialist" in result.update["messages"][0].content
 
 
 class FakeOperationalLookups:

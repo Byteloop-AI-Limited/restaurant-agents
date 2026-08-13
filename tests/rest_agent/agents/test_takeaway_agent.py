@@ -82,6 +82,7 @@ def test_takeaway_agent_is_constructed_with_expected_tools_and_prompt(takeaway_m
 
     assert call["model"] is model
     assert takeaway_module.verify_if_payment_complete in call["tools"]
-    assert len(call["tools"]) == 4
+    assert takeaway_module.update_customer in call["tools"]
+    assert len(call["tools"]) == 5
     assert "takeaway" in call["system_prompt"].lower()
     assert call["state_schema"] is dict
