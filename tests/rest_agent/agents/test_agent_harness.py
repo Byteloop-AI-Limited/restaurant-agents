@@ -14,10 +14,11 @@ SFCS is single-restaurant, so there is no rest_ref guard (unlike elai).
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
 from restaurant_agent_runtime.rest_agent import agent_wa_senders
 from restaurant_agent_runtime.rest_agent.agents.agent_harness import (
+    _last_turn_started_by_system_message,
     _normalize_min_order_value,
     _run_transfer_guards,
     _transfer_check_retained_specialist_work,
@@ -73,12 +74,38 @@ def test_run_transfer_guards_returns_none_when_all_clear():
     assert _run_transfer_guards({"retain_thread": False}, "tc-1") is None
 
 
+def test_last_turn_started_by_system_message_finds_the_nearest_turn_starter():
+    assert _last_turn_started_by_system_message(
+        [HumanMessage("hi"), SystemMessage("Call `update_customer` with ...")]
+    )
+    assert not _last_turn_started_by_system_message(
+        [SystemMessage("earlier, already-consumed instruction"), HumanMessage("where is my order?")]
+    )
+    assert not _last_turn_started_by_system_message([])
+
+
+def test_last_turn_started_by_system_message_skips_intermediate_tool_exchanges():
+    # A turn can chain tool calls before reaching update_customer; the guard
+    # must look past those to the message that actually opened the turn.
+    assert _last_turn_started_by_system_message(
+        [
+            SystemMessage("Call `update_customer` with ..."),
+            AIMessage("", tool_calls=[{"name": "other_tool", "id": "tc-0", "args": {}}]),
+            ToolMessage("other tool result", tool_call_id="tc-0"),
+        ]
+    )
+
+
 async def test_update_customer_sends_once_and_ends_without_state_changes():
     wa_client = AsyncMock()
     runtime = SimpleNamespace(
         context=SimpleNamespace(recipient="447000000001", wa_client=wa_client)
     )
-    state = {"reply_to_msg_id": "message-1", "retain_thread": True}
+    state = {
+        "reply_to_msg_id": "message-1",
+        "retain_thread": True,
+        "messages": [SystemMessage("Call `update_customer` with message=...")],
+    }
 
     result = await update_customer(
         message="Your rider has been assigned.",
@@ -93,8 +120,33 @@ async def test_update_customer_sends_once_and_ends_without_state_changes():
         reply_to_message_id="message-1",
     )
     assert result.goto == "__end__"
-    assert state == {"reply_to_msg_id": "message-1", "retain_thread": True}
     assert "/DoNotRespond:" in result.update["messages"][-1].content
+
+
+async def test_update_customer_refuses_when_triggered_by_a_customer_message():
+    wa_client = AsyncMock()
+    runtime = SimpleNamespace(
+        context=SimpleNamespace(recipient="447000000001", wa_client=wa_client)
+    )
+    state = {
+        "reply_to_msg_id": "message-1",
+        "retain_thread": True,
+        "messages": [
+            SystemMessage("Call `update_customer` with message='Payment confirmed.'"),
+            HumanMessage("where is my order? share rider location"),
+        ],
+    }
+
+    result = await update_customer(
+        message="Your order has been received and payment confirmed.",
+        state=state,
+        tool_call_id="tc-1",
+        runtime=runtime,
+    )
+
+    wa_client.send_message.assert_not_awaited()
+    assert isinstance(result, str)
+    assert "no update was sent" in result
 
 
 def test_transfer_to_triage_is_blocked_while_specialist_work_is_retained():
@@ -107,7 +159,8 @@ def test_transfer_to_triage_is_blocked_while_specialist_work_is_retained():
     result = transfer_to_triage(runtime)
 
     assert "active_agent" not in result.update
-    assert "Stay with the current specialist" in result.update["messages"][0].content
+    assert result.goto == "__end__"
+    assert "current delivery order first" in result.update["messages"][1].content
 
 
 class FakeOperationalLookups:

@@ -70,8 +70,8 @@ def test_standard_message_registration_includes_only_payment_simulation():
     )
 
     assert [handler._callback.__name__ for handler in wa.handlers[:6]] == [
-        "bound_closed_message",
         "bound_reset",
+        "bound_closed_message",
         "bound_location",
         "bound_payment_complete",
         "bound_debug",
@@ -170,6 +170,9 @@ async def test_reset_uses_exact_runtime_database(monkeypatch):
     runtime = SimpleNamespace(
         identity=SimpleNamespace(rest_ref="BNAT"),
         settings=SimpleNamespace(database=database),
+        operational_lookups=SimpleNamespace(
+            is_overwatch_recipient=lambda recipient: recipient == "447000000001"
+        ),
     )
     wa = FakeWhatsApp()
     msg = SimpleNamespace(
@@ -186,4 +189,32 @@ async def test_reset_uses_exact_runtime_database(monkeypatch):
     assert thread_handler.inactive == ["447000000001"]
     assert wa.sent == [
         {"to": "447000000001", "text": "Starting new conversation"}
+    ]
+
+
+@pytest.mark.asyncio
+async def test_reset_is_blocked_for_non_overwatch_customer(monkeypatch):
+    FakeThreadHandler.instances.clear()
+    monkeypatch.setattr(handlers, "ThreadHandler", FakeThreadHandler)
+    database = FakeDatabase()
+    runtime = SimpleNamespace(
+        identity=SimpleNamespace(rest_ref="BNAT"),
+        settings=SimpleNamespace(database=database),
+        operational_lookups=SimpleNamespace(is_overwatch_recipient=lambda _: False),
+    )
+    wa = FakeWhatsApp()
+    msg = SimpleNamespace(
+        id="message-reset-non-overwatch",
+        from_user=SimpleNamespace(wa_id="447000000002"),
+    )
+
+    await handlers.reset_thread(wa, msg, runtime=runtime)
+
+    assert database.calls == 0
+    assert FakeThreadHandler.instances == []
+    assert wa.sent == [
+        {
+            "to": "447000000002",
+            "text": "Reset is not available. Please continue in this conversation.",
+        }
     ]
