@@ -2,6 +2,7 @@
 
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
@@ -111,6 +112,7 @@ def core_runner(monkeypatch):
     module._captured = captured
     module.logger = SimpleNamespace(
         critical=lambda *_args, **_kwargs: None,
+        error=lambda *_args, **_kwargs: None,
         warning=lambda *_args, **_kwargs: None,
     )
     return module
@@ -218,36 +220,85 @@ def test_adapter_rejects_invalid_customization(core_runner, kwargs, match):
         )
 
 
-def test_malformed_tool_call_detection_is_preserved(core_runner):
-    malformed = [
+def test_malformed_tool_call_detection_finds_missing_response(core_runner):
+    messages = [
         HumanMessage("hello"),
         _ai_with_tool_calls("call-1", "call-2"),
         ToolMessage("done", tool_call_id="call-1"),
         HumanMessage("interrupted"),
     ]
-    complete = [
+
+    assert core_runner._find_malformed_tool_call_tail(messages) == (
+        1,
+        "missing_tool_responses",
+        ["call-2"],
+    )
+
+
+def test_malformed_tool_call_detection_accepts_complete_tool_turns(core_runner):
+    messages = [
         HumanMessage("hello"),
-        _ai_with_tool_calls("call-1"),
+        _ai_with_tool_calls("call-1", "call-2"),
         ToolMessage("done", tool_call_id="call-1"),
+        ToolMessage("done", tool_call_id="call-2"),
         AIMessage("finished"),
     ]
 
-    assert core_runner._find_malformed_tool_call_tail(malformed) == (
+    assert core_runner._find_malformed_tool_call_tail(messages) is None
+
+
+def test_malformed_tool_call_detection_finds_orphan_response(core_runner):
+    messages = [
+        HumanMessage("hello"),
+        ToolMessage("orphan", tool_call_id="call-1"),
+        AIMessage("finished"),
+    ]
+
+    assert core_runner._find_malformed_tool_call_tail(messages) == (
         1,
-        ["call-2"],
+        "orphan_tool_response",
+        ["call-1"],
     )
-    assert core_runner._find_malformed_tool_call_tail(complete) is None
+
+
+def test_malformed_tool_call_detection_rewinds_unexpected_response(core_runner):
+    messages = [
+        HumanMessage("hello"),
+        _ai_with_tool_calls("call-1"),
+        ToolMessage("wrong", tool_call_id="call-2"),
+    ]
+
+    assert core_runner._find_malformed_tool_call_tail(messages) == (
+        1,
+        "unexpected_tool_response",
+        ["call-2", "call-1"],
+    )
+
+
+def test_malformed_tool_call_detection_finds_extra_response(core_runner):
+    messages = [
+        _ai_with_tool_calls("call-1"),
+        ToolMessage("done", tool_call_id="call-1"),
+        ToolMessage("duplicate", tool_call_id="call-1"),
+    ]
+
+    assert core_runner._find_malformed_tool_call_tail(messages) == (
+        2,
+        "orphan_tool_response",
+        ["call-1"],
+    )
 
 
 @pytest.mark.asyncio
 async def test_malformed_tool_call_repair_removes_the_persisted_tail(core_runner):
-    malformed_ai = _ai_with_tool_calls("call-1")
-    interrupted = HumanMessage("interrupted", id="human-interruption")
+    valid = HumanMessage("valid", id="valid-prefix")
+    orphan = ToolMessage("orphan", tool_call_id="call-1", id="orphan-tool")
+    later = AIMessage("later", id="later-message")
     updates = []
 
     class Graph:
         async def aget_state(self, config):
-            return SimpleNamespace(values={"messages": [malformed_ai, interrupted]})
+            return SimpleNamespace(values={"messages": [valid, orphan, later]})
 
         async def aupdate_state(self, **kwargs):
             updates.append(kwargs)
@@ -259,8 +310,146 @@ async def test_malformed_tool_call_repair_removes_the_persisted_tail(core_runner
     assert repaired is True
     assert updates[0]["as_node"] == "toolNode"
     assert [message.id for message in updates[0]["values"]["messages"]] == [
-        "assistant-call",
-        "human-interruption",
+        "orphan-tool",
+        "later-message",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_malformed_tool_call_repair_refuses_idless_tail(core_runner):
+    orphan = ToolMessage("orphan", tool_call_id="call-1")
+    updates = []
+
+    class Graph:
+        async def aget_state(self, config):
+            return SimpleNamespace(values={"messages": [orphan]})
+
+        async def aupdate_state(self, **kwargs):
+            updates.append(kwargs)
+
+    repaired = await core_runner._repair_malformed_tool_call_tail(
+        Graph(), {"configurable": {"thread_id": "thread-1"}}
+    )
+
+    assert repaired is False
+    assert updates == []
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "An assistant message with 'tool_calls' must be followed by tool messages responding to each 'tool_call_id'.",
+        "Invalid parameter: messages with role 'tool' must be a response to a preceeding message with 'tool_calls'.",
+        "Invalid parameter: messages with role 'tool' must be a response to a preceding message with 'tool_calls'.",
+    ),
+)
+def test_tool_protocol_error_recognizes_openai_variants(core_runner, message):
+    error = SimpleNamespace(body={"message": message})
+
+    assert core_runner._is_tool_protocol_error(error) is True
+
+
+def test_tool_protocol_error_rejects_unrelated_bad_request(core_runner):
+    error = SimpleNamespace(body={"message": "Invalid model parameter."})
+
+    assert core_runner._is_tool_protocol_error(error) is False
+
+
+@pytest.mark.asyncio
+async def test_tool_protocol_error_repairs_and_retries_once(core_runner, monkeypatch):
+    class FakeBadRequestError(Exception):
+        def __init__(self, message):
+            super().__init__(message)
+            self.body = {"message": message}
+
+    error = FakeBadRequestError(
+        "Invalid parameter: messages with role 'tool' must be a response "
+        "to a preceeding message with 'tool_calls'."
+    )
+    graph = SimpleNamespace(
+        ainvoke=AsyncMock(
+            side_effect=[error, {"messages": [AIMessage("recovered")]}]
+        )
+    )
+    core_runner.ContextSchema = lambda **kwargs: SimpleNamespace(
+        **kwargs, thread_handler=AsyncMock()
+    )
+    core_runner.AsyncPostgresSaver = lambda _pool: object()
+    core_runner._repair_malformed_tool_call_tail = AsyncMock(
+        side_effect=[False, True]
+    )
+    monkeypatch.setattr(core_runner.openai, "BadRequestError", FakeBadRequestError)
+    runtime = SimpleNamespace(
+        async_wa_client=object(),
+        identity=SimpleNamespace(rest_ref="SFCS"),
+        presentation=SimpleNamespace(
+            display_name="SFCS",
+            logo_url=None,
+            contact_phone=None,
+            delivery_button_label="Delivery",
+            takeaway_button_label="Collection",
+            enquiry_menu=object(),
+        ),
+        settings=SimpleNamespace(
+            project=object(),
+            payment=object(),
+            database_client=object(),
+        ),
+        operational_lookups=SimpleNamespace(
+            get_restaurant_master=lambda: object()
+        ),
+    )
+    graph_builder = SimpleNamespace(compile=lambda **_: graph)
+
+    result = await core_runner.run_rest_graph_with_custom_msg(
+        recipient="447000000001",
+        pool=object(),
+        config={"configurable": {"thread_id": "thread-1"}},
+        human_msg="hello",
+        runtime=runtime,
+        graph_builder=graph_builder,
+    )
+
+    assert result == "recovered"
+    assert graph.ainvoke.await_count == 2
+    assert core_runner._repair_malformed_tool_call_tail.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_persist_only_updates_state_without_invoking_the_model(core_runner):
+    updates = []
+    graph = SimpleNamespace(
+        aupdate_state=AsyncMock(side_effect=lambda config, values: updates.append((config, values)))
+    )
+    core_runner.AsyncPostgresSaver = lambda _pool: object()
+    core_runner.get_config_for_recipient = AsyncMock(
+        return_value=({"configurable": {"thread_id": "thread-1"}}, False)
+    )
+    core_runner._repair_malformed_tool_call_tail = AsyncMock(return_value=False)
+    graph_builder = SimpleNamespace(compile=lambda **_: graph)
+    runtime = SimpleNamespace(
+        settings=SimpleNamespace(database=SimpleNamespace(get_pool=AsyncMock(return_value=object()))),
+        identity=SimpleNamespace(rest_ref="SFCS"),
+    )
+
+    result = await core_runner.run_rest_graph_with_custom_msg(
+        recipient="447000000001",
+        msgs=[HumanMessage("I want takeaway")],
+        state_update_dict={"active_agent": "takeaway_agent"},
+        persist_only=True,
+        runtime=runtime,
+        graph_builder=graph_builder,
+    )
+
+    assert result is None
+    assert updates == [
+        (
+            {"configurable": {"thread_id": "thread-1"}},
+            {
+                "active_agent": "takeaway_agent",
+                "messages": [HumanMessage("I want takeaway")],
+            },
+        )
     ]
 
 

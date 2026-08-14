@@ -43,9 +43,10 @@ response examples, see [Operational Lookup Cache](caching_system.md#calls).
 Message handlers are registered on the runtime's exact async WhatsApp client in
 this order:
 
-1. Out-of-hours guard.
-2. `/reset`, which marks the customer's persistent Threads inactive using the
-   runtime database pool.
+1. `/reset`, an Overwatch-only operational escape hatch that marks the
+   sender's persistent Threads inactive using the runtime database pool.
+   Regular customers receive a fixed denial.
+2. Out-of-hours guard.
 3. Shared-location handling with runtime maps settings.
 4. `/paid3100`, which posts a payment-complete simulation for the sender's
    latest eligible order using exact runtime dependencies.
@@ -80,10 +81,23 @@ external payment system remains authoritative.
 - `POST /{rest_ref}/on-restaurant-enter/{order_number}`
 - `POST /{rest_ref}/on-customer-enter/{order_number}`
 - `POST /{rest_ref}/delivery-timedout`
+- `POST /{rest_ref}/wa-location-response`
 
 These routes translate external fulfilment reports into customer messages and
 graph-state projections. Delivery timeout also invokes the runtime-bound
-payment-cancellation flow.
+payment-cancellation flow, then releases the retained delivery projection to
+triage and clears order-scoped runtime state. It intentionally leaves the
+Thread active so a subsequent new-service request can be handled normally.
+
+`wa-location-response` is Ordelo's open, unsigned callback for the WaLocation
+client integration (`docs/wa_location_restaurant_agents_integration.md` in
+OrdeloAgent). It is invoked out-of-band from a customer's `request_rider_location`
+tool call, not from a background task queued by another route. It looks up the
+customer's active Thread without creating one, revalidates retained/picked-up/
+matching-order state, and sends a WhatsApp location pin through this app's
+injected client only after every check passes — returning `409` on any guard
+failure and `502` if the WhatsApp send itself fails, so Ordelo can tell a
+rejected request apart from an accepted one it failed to deliver.
 
 ## Thread Routes
 
@@ -148,6 +162,14 @@ description: >
 ```
 
 ```code-ref
+file: packages/restaurant-agent-runtime/src/restaurant_agent_runtime/watomation/routers/rider_event_hooks.py
+symbol: wa_location_response
+feature: webhook-endpoints
+description: >
+  Open Ordelo-to-service WaLocation callback; revalidates retained/picked-up/matching-order state before sending a WhatsApp location pin.
+```
+
+```code-ref
 file: packages/restaurant-agent-runtime/src/restaurant_agent_runtime/watomation/on_message_graph_handler.py
 symbol: simulate_payment_complete
 feature: webhook-endpoints
@@ -180,3 +202,36 @@ description: >
   activity reporting and application logs for completion evidence.
 - `/paid3100` is side-effecting and may advance the sender's external
   payment/order workflow; the offline test gate never invokes it live.
+
+## Manual Retained-Flow Verification
+
+Run this only against the test application/WABA with an Overwatch test recipient.
+Do not point a production WhatsApp webhook at a local server or invoke
+`/paid3100` against a production order.
+
+1. Start a delivery or takeaway order and complete its test payment. Confirm
+   `/debug` reports the relevant specialist as `active_agent` and
+   `retain_thread: True`.
+2. While it is retained, send an explicit request for the other service both as
+   text (for example, `I want takeaway`) and with the service button. Confirm
+   the conversation remains with the current specialist and no other-service
+   menu is sent.
+3. For delivery, invoke the test rider timeout endpoint:
+
+   ```text
+   POST /rider-event-hooks/{rest_ref}/delivery-timedout
+   {"customer_id":"<test-recipient>"}
+   ```
+
+   Wait for the queued customer update, then use `/debug`. The expected
+   projection is `active_agent: triage_agent`, `retain_thread: False`, payment
+   false, and cleared order/rider/reply fields; the Thread remains active.
+4. Send the same explicit service request again. Confirm the selected new-order
+   flow starts (the takeaway menu is sent directly; delivery begins its address
+   flow), proving the old specialist owner was cleared.
+5. Send `/reset` as the normal test customer and confirm it returns the fixed
+   denial. Repeat only with an Overwatch recipient and confirm a new Thread
+   lifecycle is started.
+
+For the policy and exact state boundary, see
+[ADR-0018](adr/0018-retained-specialist-lifecycle-and-service-selection.md).

@@ -1,9 +1,16 @@
 """Runtime rendering for app-owned system prompts."""
 
 from langchain.agents.middleware import ModelRequest, dynamic_prompt
+from langchain_core.messages import SystemMessage
 from langchain_core.prompts import PromptTemplate
 
 from restaurant_agent_runtime.rest_agent.agents.agent_harness import ContextSchema
+from restaurant_agent_runtime.rest_agent.specialist_lifecycle import SpecialistFlowView
+
+
+def _retention_system_instruction(state: dict) -> str:
+    """Compatibility adapter for callers of the former prompt-local helper."""
+    return SpecialistFlowView.from_state(state).system_instruction()
 
 
 def render_prompt_middleware(prompt: str):
@@ -11,7 +18,7 @@ def render_prompt_middleware(prompt: str):
     template = PromptTemplate.from_template(prompt)
 
     @dynamic_prompt
-    def render(request: ModelRequest) -> str:
+    def render(request: ModelRequest) -> SystemMessage:
         context: ContextSchema = request.runtime.context
         master = context.restaurant_master
         address = ", ".join(
@@ -25,13 +32,19 @@ def render_prompt_middleware(prompt: str):
             )
             if part
         )
-        return template.format(
-            restaurant_name=context.restaurant_name,
-            restaurant_address=address,
-            restaurant_phone=context.restaurant_contact_phone or "not available",
-            venue_hours=master.service_hours.format_week(),
-            delivery_order_hours=master.service_hours.format_new_order_week(),
-            takeaway_order_hours=master.service_hours.format_new_order_week(),
+        return SystemMessage(
+            content=(
+                template.format(
+                    restaurant_name=context.restaurant_name,
+                    restaurant_address=address,
+                    restaurant_phone=context.restaurant_contact_phone
+                    or "not available",
+                    venue_hours=master.service_hours.format_week(),
+                    delivery_order_hours=master.service_hours.format_new_order_week(),
+                    takeaway_order_hours=master.service_hours.format_new_order_week(),
+                )
+                + _retention_system_instruction(request.state)
+            )
         )
 
     return render

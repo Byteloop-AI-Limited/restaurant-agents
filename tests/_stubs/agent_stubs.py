@@ -98,11 +98,16 @@ def build_agent_harness_stub():
         """Transfer to triage agent in tests."""
         return _transfer_command("triage_agent")
 
+    def update_customer(*args, **kwargs):
+        """Send a specialist customer update in tests."""
+        return "customer updated"
+
     module.send_takeaway_menu_tool = send_takeaway_menu_tool
     module.send_restaurant_menu_tool = send_restaurant_menu_tool
     module.transfer_to_delivery = transfer_to_delivery
     module.transfer_to_takeaway = transfer_to_takeaway
     module.transfer_to_triage = transfer_to_triage
+    module.update_customer = update_customer
     return module
 
 

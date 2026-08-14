@@ -40,14 +40,16 @@ STANDARD_TOOLS = {
         "calculate_min_order_value",
         "send_restaurant_menu_tool",
         "verify_if_payment_complete",
-        "send_updates_to_customer",
+        "update_customer",
         "check_delivery_driver_allocation_status",
         "send_rider_live_location_link",
+        "request_rider_location",
         "transfer_to_takeaway",
         "transfer_to_triage",
     ),
     "takeaway.py": (
         "verify_if_payment_complete",
+        "update_customer",
         "send_takeaway_menu_tool",
         "transfer_to_delivery",
         "transfer_to_triage",
@@ -155,6 +157,40 @@ def test_each_app_owns_complete_non_empty_prompts(app_name, rest_agent_dir):
         prompt_path = rest_agent_dir / "prompts" / prompt_filename
         assert prompt_path.read_text().strip(), (app_name, prompt_filename)
         assert prompt_filename in recipe_source
+
+
+@pytest.mark.parametrize(("app_name", "rest_agent_dir"), APP_REST_AGENT_DIRS)
+def test_specialist_prompts_keep_retained_orders_with_the_specialist(
+    app_name, rest_agent_dir
+):
+    prompt_dir = rest_agent_dir / "prompts"
+    for prompt_filename in (
+        "delivery_multiagent_prompt.md",
+        "takeaway_agent_prompt.md",
+    ):
+        prompt = (prompt_dir / prompt_filename).read_text()
+        assert "`retain_thread=True`" in prompt, (app_name, prompt_filename)
+        assert "`update_customer(message=...)`" in prompt, (app_name, prompt_filename)
+        assert "strictly avoid handover to other agents" in prompt, (
+            app_name,
+            prompt_filename,
+        )
+
+
+@pytest.mark.parametrize(("app_name", "rest_agent_dir"), APP_REST_AGENT_DIRS)
+def test_customer_support_prompt_contract_is_consistent(app_name, rest_agent_dir):
+    prompt_dir = rest_agent_dir / "prompts"
+    delivery = (prompt_dir / "delivery_multiagent_prompt.md").read_text()
+    takeaway = (prompt_dir / "takeaway_agent_prompt.md").read_text()
+    triage = (prompt_dir / "triage_agent_prompt.md").read_text()
+
+    assert "Delivery time depends on traffic and the distance to your address." in delivery
+    assert "We will share the rider’s location with you once it’s available." in delivery
+    assert "Never claim that a refund has been issued" in delivery
+    assert "Your refund has been issued. It may take a few hours to a couple of days" not in delivery
+    assert "current collection order first" in takeaway
+    assert "Never claim that a refund has been issued" in triage
+    assert "Your refund has been issued. It may take a few hours to a couple of days" not in triage
 
 
 @pytest.mark.parametrize(("app_name", "agent_dir"), AGENT_IMPLEMENTATIONS)

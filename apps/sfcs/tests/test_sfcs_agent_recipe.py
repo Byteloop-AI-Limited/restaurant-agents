@@ -20,7 +20,10 @@ def test_sfcs_entrypoint_uses_shared_agent_runtime():
 def test_sfcs_prompts_require_eager_purpose_built_tool_use():
     prompt_dir = Path(__file__).resolve().parents[1] / "src/sfcs_agent/rest_agent/prompts"
 
-    assert "**EAGER TOOL USE:**" in (prompt_dir / "triage_agent_prompt.md").read_text()
+    triage_prompt = (prompt_dir / "triage_agent_prompt.md").read_text()
+    assert "**EAGER TOOL USE:**" in triage_prompt
+    assert "message_before_selection" in triage_prompt
+    assert "acknowledgement_message" in triage_prompt
     delivery_prompt = (prompt_dir / "delivery_multiagent_prompt.md").read_text()
     assert "immediately call `confirm_delivery_address`" in delivery_prompt
     assert "immediately call `capture_delivery_address`" in delivery_prompt

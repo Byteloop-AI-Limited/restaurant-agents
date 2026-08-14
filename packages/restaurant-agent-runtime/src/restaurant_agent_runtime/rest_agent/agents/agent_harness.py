@@ -5,14 +5,16 @@ This module provides the foundational components shared across all agents:
   - ContextSchema: Runtime context with pool, wa_client, recipient, etc.
   - AgentState: Shared state schema for all agents
   - Transfer tools for agent handoffs
-  - _transfer_check_delivery_retain: Guard that blocks transfer if delivery is in progress (retain_thread=True)
+  - update_customer: Sends an authoritative specialist update and ends the turn
+  - _transfer_check_retained_specialist_work: Guard that blocks handoff while retained work is active
 
 This module should have NO imports from other agent modules to avoid circular imports.
   Functions/Classes:
     . AgentState
     . ContextSchema
     . get_context_schema
-    . _transfer_check_delivery_retain
+    . update_customer
+    . _transfer_check_retained_specialist_work
     . _run_transfer_guards
     . transfer_to_delivery
     . transfer_to_takeaway
@@ -23,7 +25,6 @@ This module should have NO imports from other agent modules to avoid circular im
     . respond_on_wa
 """
 
-import re
 from typing import Annotated, Any, Literal, Sequence
 
 from langchain.agents.middleware import after_agent, before_model
@@ -31,7 +32,9 @@ from langchain.tools import ToolRuntime
 from langchain_core.messages import (
     AIMessage,
     BaseMessage,
+    HumanMessage,
     RemoveMessage,
+    SystemMessage,
     ToolMessage,
 )
 from langchain_core.tools.base import InjectedToolCallId
@@ -54,6 +57,14 @@ from restaurant_agent_runtime.services.operational_lookup_cache import (
     OperationalLookupCache,
 )
 from restaurant_agent_runtime.runtime import EnquiryMenu
+from restaurant_agent_runtime.rest_agent.new_order_entry import (
+    normalize_min_order_value,
+    send_new_order_menu,
+)
+from restaurant_agent_runtime.rest_agent.service_selection import (
+    retained_handoff_block,
+    route_tool_service_selection,
+)
 
 
 # %% Define AgentState
@@ -75,6 +86,8 @@ class AgentState(TypedDict):
         is_delivery_rider_assigned: Whether a rider is assigned
         rider_live_location_url: URL for rider tracking
         is_delivery_picked_up: Whether food is picked up by rider
+        is_payment_cancelled: Whether payment cancellation has been confirmed
+        is_delivery_no_rider: Whether delivery ended because no rider was found
         retain_thread: Whether to keep thread active
     """
 
@@ -82,18 +95,22 @@ class AgentState(TypedDict):
     active_agent: NotRequired[str]
     messages: Annotated[Sequence[BaseMessage], add_messages]
     wa_name: str
-    customer_address: dict
-    is_delivery_address_confirmed: bool
-    is_outside_delivery_area: bool
-    min_order_value: float
-    order_id: str
-    order_number: str
-    is_payment_successful: bool
-    reply_to_msg_id: str
-    is_delivery_rider_assigned: bool
-    rider_live_location_url: str
-    is_delivery_picked_up: bool
+    customer_address: dict | None
+    is_delivery_address_confirmed: bool | None
+    is_outside_delivery_area: bool | None
+    min_order_value: float | None
+    order_id: str | None
+    order_number: str | None
+    is_payment_successful: bool | None
+    reply_to_msg_id: str | None
+    is_delivery_rider_assigned: bool | None
+    rider_live_location_url: str | None
+    is_delivery_picked_up: bool | None
+    is_payment_cancelled: bool | None
+    is_delivery_no_rider: bool | None
     retain_thread: bool
+    order_summary: NotRequired[dict | None]
+    payment_link: NotRequired[str | None]
     reservation_id: NotRequired[str]
     is_reservation_confirmed: NotRequired[bool]
     ask_for_consent: bool = False
@@ -129,6 +146,7 @@ class ContextSchema(BaseModel):
     client_ordelo: Client
     operational_lookups: OperationalLookupCache
     thread_handler: Any | None = None
+    wa_msg_id: str | None = None
 
     def model_post_init(self, __context: Any) -> None:
         if self.thread_handler is None:
@@ -139,25 +157,8 @@ class ContextSchema(BaseModel):
 
 
 def _normalize_min_order_value(raw_min_order_value: Any) -> float:
-    if raw_min_order_value in (None, ""):
-        return 0.0
-
-    try:
-        return float(raw_min_order_value)
-    except (TypeError, ValueError):
-        # Handle values like "£12.5"
-        cleaned_value = re.sub(r"[^\d\.\-]", "", str(raw_min_order_value)).strip()
-        if cleaned_value:
-            try:
-                return float(cleaned_value)
-            except ValueError:
-                pass
-
-    logger.warning(
-        "Invalid min_order_value in state: {}. Falling back to 0.0",
-        raw_min_order_value,
-    )
-    return 0.0
+    """Compatibility export for callers of the former harness helper."""
+    return normalize_min_order_value(raw_min_order_value)
 
 
 async def _send_menu_tool(
@@ -167,53 +168,37 @@ async def _send_menu_tool(
     runtime: ToolRuntime[ContextSchema],
     order_type: Literal["delivery", "takeaway"],
 ) -> Command:
-    from restaurant_agent_runtime.rest_agent.agent_wa_senders import send_restaurant_menu
-
     ctx = runtime.context
-    if not ctx.operational_lookups.accepts_new_order(order_type, ctx.recipient):
-        await ctx.wa_client.send_message(
-            to=ctx.recipient,
-            text="Sorry, new orders for that service have closed for today. You can still send us an enquiry.",
-            reply_to_message_id=state.get("reply_to_msg_id"),
-        )
+    result = await send_new_order_menu(
+        recipient=ctx.recipient,
+        state=state,
+        rest_ref=state.get("rest_ref") or ctx.rest_ref,
+        wa_client=ctx.wa_client,
+        logo_url=ctx.restaurant_logo_url,
+        operational_lookups=ctx.operational_lookups,
+        thread_handler=ctx.thread_handler,
+        order_type=order_type,
+        reply_to_message_id=state.get("reply_to_msg_id"),
+    )
+    if result == "closed":
         return Command(
             goto=END,
             update={
                 "messages": [
                     ToolMessage(
-                        "New order menu blocked because the service order cutoff has passed.",
+                        "New order menu blocked because the service is currently closed.",
                         tool_call_id=tool_call_id,
                     )
                 ]
             },
         )
-    recipient = ctx.recipient
-    thread_id, _ = await ctx.thread_handler.get_or_create_thread(recipient)
-    min_order_value = _normalize_min_order_value(state.get("min_order_value"))
-    rest_ref = state.get("rest_ref") or ctx.rest_ref
-
-    menu_err = await send_restaurant_menu(
-        recipient=recipient,
-        minimum_order=min_order_value,
-        thread_id=str(thread_id),
-        rest_ref=rest_ref,
-        order_type=order_type,
-        wa_client=ctx.wa_client,
-        logo_url=ctx.restaurant_logo_url,
-        operational_lookups=ctx.operational_lookups,
-    )
-    if isinstance(menu_err, ValueError):
-        await ctx.wa_client.send_message(
-            to=recipient,
-            text="Sorry, I couldn't send the menu link right now. Please try again later.",
-            reply_to_message_id=state.get("reply_to_msg_id"),
-        )
+    if result == "failed":
         return Command(
             goto=END,
             update={
                 "messages": [
                     ToolMessage(
-                        f"Failed to send restaurant menu: {menu_err}",
+                        "Failed to send restaurant menu.",
                         tool_call_id=tool_call_id,
                     ),
                 ],
@@ -265,94 +250,122 @@ async def send_takeaway_menu_tool(
     )
 
 
+def _last_turn_started_by_system_message(messages: Sequence[BaseMessage]) -> bool:
+    """Whether the current turn was opened by a runtime SystemMessage.
+
+    A tool-calling turn can chain several AIMessage/ToolMessage pairs before
+    reaching `update_customer`; walk backward past those to find the human or
+    system message that actually started the turn. Every legitimate
+    `update_customer` call site queues a `system_msg` and nothing else for
+    that turn, so a customer HumanMessage as the most recent turn-starter
+    means no system instruction authorized this call.
+    """
+    for msg in reversed(messages):
+        if isinstance(msg, SystemMessage):
+            return True
+        if isinstance(msg, HumanMessage):
+            return False
+    return False
+
+
+async def update_customer(
+    message: str,
+    state: Annotated[dict, InjectedState],
+    tool_call_id: Annotated[str, InjectedToolCallId],
+    runtime: ToolRuntime[ContextSchema],
+) -> Command:
+    """Send an authoritative order update from the active specialist.
+
+    Use this only for a delivery or takeaway update supplied by an authoritative
+    system event or system instruction. It deliberately does not change thread
+    retention, agent ownership, payment, or fulfilment state.
+
+    Refuses to fire unless this turn was opened by a runtime SystemMessage: a
+    customer's own message must never trigger it, and it must never reuse an
+    earlier turn's already-consumed system instruction.
+    """
+    if not _last_turn_started_by_system_message(state.get("messages", [])):
+        return (
+            "update_customer is for runtime-authoritative updates only, supplied "
+            "by a system message in this exact turn. This turn was started by "
+            "the customer's own message, not a system instruction, so no update "
+            "was sent. Use the tool that matches what the customer actually "
+            "asked, or answer from current state."
+        )
+
+    text = message.strip()
+    if not text:
+        return Command(
+            goto=END,
+            update={
+                "messages": [
+                    ToolMessage(
+                        "Customer update was not sent because the message was empty.",
+                        tool_call_id=tool_call_id,
+                    ),
+                    AIMessage("/DoNotRespond: Customer update was not sent."),
+                ]
+            },
+        )
+
+    ctx = runtime.context
+    await ctx.wa_client.send_message(
+        to=ctx.recipient,
+        text=text,
+        reply_to_message_id=state.get("reply_to_msg_id"),
+    )
+    return Command(
+        goto=END,
+        update={
+            "messages": [
+                ToolMessage(
+                    f"Authoritative update sent to customer: {text}",
+                    tool_call_id=tool_call_id,
+                ),
+                AIMessage("/DoNotRespond: Authoritative customer update sent."),
+            ]
+        },
+    )
+
+
 def _run_transfer_guards(state: dict, tool_call_id: str) -> Command | None:
-    """Run all pre-transfer guards in order; return the first blocking Command or None."""
-    for check in (
-        _transfer_check_delivery_retain(state, tool_call_id),
-    ):
-        if check is not None:
-            return check
-    return None
+    """Compatibility adapter for the legacy guard helper.
+
+    New handoff paths call the lifecycle view directly; retaining this tiny
+    adapter avoids breaking existing integrations that imported the helper.
+    """
+    return _transfer_check_retained_specialist_work(state, tool_call_id)
 
 
-def transfer_to_delivery(
+async def transfer_to_delivery(
     runtime: ToolRuntime[ContextSchema],
 ) -> Command:
     """Transfer the conversation to the delivery agent.
 
     Use this tool when the customer wants to order food for delivery.
     """
-    if (guard := _run_transfer_guards(runtime.state, runtime.tool_call_id)) is not None:
-        return guard
-    if not runtime.context.operational_lookups.accepts_new_order(
-        "delivery", runtime.context.recipient
-    ):
-        return Command(
-            update={
-                "messages": [
-                    ToolMessage(
-                        "Delivery handoff blocked because new delivery orders are closed. Offer an enquiry instead.",
-                        tool_call_id=runtime.tool_call_id,
-                    )
-                ]
-            }
-        )
-
-    transfer_message = ToolMessage(
-        content="Transferred to delivery agent. Customer wants food delivery.",
+    return await route_tool_service_selection(
+        service="delivery",
+        state=runtime.state,
         tool_call_id=runtime.tool_call_id,
-    )
-
-    logger.info(
-        f"Transferring to delivery agent for recipient: {runtime.context.recipient}"
-    )
-    update_messages = [transfer_message]
-
-    # Get the last AI message to include in the handoff
-    last_ai_message = next(
-        (
-            msg
-            for msg in reversed(runtime.state["messages"])
-            if isinstance(msg, AIMessage)
-        ),
-        None,
-    )
-    if last_ai_message:
-        update_messages.insert(0, last_ai_message)
-
-    return Command(
-        # Jump to the parent orchestration graph where delivery_agent is defined.
-        graph=Command.PARENT,
-        goto="delivery_agent",
-        update={
-            "active_agent": "delivery_agent",
-            "messages": update_messages,
-        },
+        runtime=runtime,
     )
 
 
 # %%
-def _transfer_check_delivery_retain(state: dict, tool_call_id: str) -> Command | None:
-    """Block transfer away from delivery if a delivery is in progress (retain_thread=True).
+def _transfer_check_retained_specialist_work(
+    state: dict, tool_call_id: str
+) -> Command | None:
+    """Block a specialist handoff while explicitly retained work is active.
 
-    Returns a Command that stays in the current agent with an explanatory ToolMessage,
-    or None if the transfer is allowed.
+    Missing or null values retain the legacy pre-order behavior and are treated
+    as not retained. A literal ``True`` keeps the current specialist responsible
+    for safe customer support until a lifecycle event explicitly clears it.
     """
-    if state.get("retain_thread") is True:
-        return Command(
-            update={
-                "messages": [
-                    ToolMessage(
-                        content="Cannot transfer: a delivery is currently in progress. Stay with the delivery agent to complete the order.",
-                        tool_call_id=tool_call_id,
-                    )
-                ]
-            }
-        )
-    return None
+    return retained_handoff_block(state, tool_call_id)
 
 
-def transfer_to_takeaway(
+async def transfer_to_takeaway(
     state: Annotated[dict, InjectedState],
     runtime: ToolRuntime[ContextSchema],
 ) -> Command:
@@ -360,56 +373,11 @@ def transfer_to_takeaway(
 
     Use this tool when the customer wants to order food for collection/takeaway.
     """
-    if (guard := _run_transfer_guards(state, runtime.tool_call_id)) is not None:
-        return guard
-    if not runtime.context.operational_lookups.accepts_new_order(
-        "takeaway", runtime.context.recipient
-    ):
-        return Command(
-            update={
-                "messages": [
-                    ToolMessage(
-                        "Takeaway handoff blocked because new takeaway orders are closed. Offer an enquiry instead.",
-                        tool_call_id=runtime.tool_call_id,
-                    )
-                ]
-            }
-        )
-
-    _current_active_agent = state.get("active_agent", "triage_agent")
-    _current_rest_ref = state.get("rest_ref")
-
-    transfer_message = ToolMessage(
-        content=f"Transferred to takeaway agent. Customer wants takeaway/collection. Current agent: {_current_active_agent}, Restaurant: {_current_rest_ref}",
+    return await route_tool_service_selection(
+        service="takeaway",
+        state=state,
         tool_call_id=runtime.tool_call_id,
-    )
-
-    logger.info(
-        f"Transferring to takeaway agent for recipient: {runtime.context.recipient}"
-    )
-
-    update_messages = [transfer_message]
-
-    # Get the last AI message to include in the handoff
-    last_ai_message = next(
-        (
-            msg
-            for msg in reversed(runtime.state["messages"])
-            if isinstance(msg, AIMessage)
-        ),
-        None,
-    )
-    if last_ai_message:
-        update_messages.insert(0, last_ai_message)
-
-    return Command(
-        # Jump to the parent orchestration graph where takeaway_agent is defined.
-        graph=Command.PARENT,
-        goto="takeaway_agent",
-        update={
-            "active_agent": "takeaway_agent",
-            "messages": update_messages,
-        },
+        runtime=runtime,
     )
 
 
@@ -425,7 +393,9 @@ def transfer_to_triage(
     message instructs to terminate the conversation.
     """
     if (
-        guard := _transfer_check_delivery_retain(runtime.state, runtime.tool_call_id)
+        guard := _transfer_check_retained_specialist_work(
+            runtime.state, runtime.tool_call_id
+        )
     ) is not None:
         return guard
 

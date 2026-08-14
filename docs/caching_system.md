@@ -45,6 +45,12 @@ venue were inside its service interval — do not re-implement the
 `is_overwatch_recipient(...) or ...accepts_new_order(...)` check inline at a
 new call site.
 
+For new-order interactions, the availability result is final: an approved
+collection selection sends the menu directly, an approved delivery selection
+continues to the address flow, and an unavailable normal recipient receives a
+single `Ordering is currently closed.` message. The model must not ask for the
+date or time or make a second hours decision.
+
 ```python
 can_deliver = runtime.operational_lookups.accepts_new_order("delivery", recipient)
 is_open_now = runtime.operational_lookups.is_open(recipient, datetime.now(UK_TZ))

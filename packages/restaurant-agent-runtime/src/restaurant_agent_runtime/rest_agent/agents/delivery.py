@@ -31,18 +31,53 @@ from restaurant_agent_runtime.rest_agent.agents.agent_harness import (
     send_restaurant_menu_tool as _harness_send_menu_tool,
     transfer_to_takeaway,
     transfer_to_triage,
+    update_customer,
 )
 from restaurant_agent_runtime.rest_agent.agent_wa_senders import (
     confirm_delivery_address_wa,
     send_update_address_wa,
 )
 from restaurant_agent_runtime.rest_agent.prompt_runtime import render_prompt_middleware
+from restaurant_agent_runtime.rest_agent.rider_location_support import (
+    send_rider_location_reply,
+)
+from restaurant_agent_runtime.rest_agent.specialist_lifecycle import (
+    DELIVERY_ARRIVAL_TIME_QUALIFIER,
+    DELIVERY_TIMEOUT_PENDING_MESSAGE,
+    retained_completion_first_message,
+)
 from restaurant_agent_runtime.services.payment_ms.payment import cancel_payment
 from restaurant_agent_runtime.services.order_service import get_min_order_value
 
 
 # %%
 # %%
+async def _block_paid_order_change(
+    *,
+    state: dict,
+    tool_call_id: str,
+    runtime: ToolRuntime[ContextSchema],
+    detail: str,
+) -> Command:
+    """Keep paid retained delivery work intact without a restaurant-contact detour."""
+    ctx = runtime.context
+    reply = retained_completion_first_message(state)
+    await ctx.wa_client.send_message(
+        to=ctx.recipient,
+        text=reply,
+        reply_to_message_id=state.get("reply_to_msg_id"),
+    )
+    return Command(
+        goto=END,
+        update={
+            "messages": [
+                ToolMessage(detail, tool_call_id=tool_call_id),
+                AIMessage(f"/DoNotRespond: {detail}"),
+            ]
+        },
+    )
+
+
 async def capture_delivery_address(
     state: Annotated[dict, InjectedState],
     tool_call_id: Annotated[str, InjectedToolCallId],
@@ -61,25 +96,11 @@ async def capture_delivery_address(
         str: A message indicating the result of the operation.
     """
     if state.get("is_payment_successful", False) is True:
-        ctx = runtime.context
-        await ctx.wa_client.send_message(
-            to=ctx.recipient,
-            text=f"We can't change or capture a new delivery address after payment; please contact us on {ctx.restaurant_contact_phone or 'the restaurant'}.",
-            reply_to_message_id=state.get("reply_to_msg_id"),
-        )
-        return Command(
-            goto=END,
-            update={
-                "messages": [
-                    ToolMessage(
-                        "Address capture blocked because payment is already completed.",
-                        tool_call_id=tool_call_id,
-                    ),
-                    AIMessage(
-                        "/DoNotRespond: Address capture blocked because payment is already completed."
-                    ),
-                ]
-            },
+        return await _block_paid_order_change(
+            state=state,
+            tool_call_id=tool_call_id,
+            runtime=runtime,
+            detail="Address capture blocked because payment is already completed.",
         )
 
     if state.get("customer_address", None) is not None:
@@ -134,25 +155,11 @@ async def update_address_of_existing_user(
         str: A message indicating the result of the operation.
     """
     if state.get("is_payment_successful", False) is True:
-        ctx = runtime.context
-        await ctx.wa_client.send_message(
-            to=ctx.recipient,
-            text=f"We can't change the delivery address after payment; please contact us on {ctx.restaurant_contact_phone or 'the restaurant'}.",
-            reply_to_message_id=state.get("reply_to_msg_id"),
-        )
-        return Command(
-            goto=END,
-            update={
-                "messages": [
-                    ToolMessage(
-                        "Address update blocked because payment is already completed.",
-                        tool_call_id=tool_call_id,
-                    ),
-                    AIMessage(
-                        "/DoNotRespond: Address update blocked because payment is already completed."
-                    ),
-                ]
-            },
+        return await _block_paid_order_change(
+            state=state,
+            tool_call_id=tool_call_id,
+            runtime=runtime,
+            detail="Address update blocked because payment is already completed.",
         )
 
     if state.get("is_delivery_address_confirmed", None) is True:
@@ -215,25 +222,11 @@ async def confirm_delivery_address(
         return "No delivery address found, use tool `capture_customer_address` to capture the address."
 
     if state.get("is_payment_successful", False) is True:
-        ctx = runtime.context
-        await ctx.wa_client.send_message(
-            to=ctx.recipient,
-            text=f"We can't change the delivery address after payment; please contact us on {ctx.restaurant_contact_phone or 'the restaurant'}.",
-            reply_to_message_id=state.get("reply_to_msg_id"),
-        )
-        return Command(
-            goto=END,
-            update={
-                "messages": [
-                    ToolMessage(
-                        "Address confirmation/update blocked because payment is already completed.",
-                        tool_call_id=tool_call_id,
-                    ),
-                    AIMessage(
-                        "/DoNotRespond: Address confirmation/update blocked because payment is already completed."
-                    ),
-                ]
-            },
+        return await _block_paid_order_change(
+            state=state,
+            tool_call_id=tool_call_id,
+            runtime=runtime,
+            detail="Address confirmation/update blocked because payment is already completed.",
         )
 
 
@@ -461,6 +454,23 @@ async def answer_general_query(
     is_payment_successful = state.get("is_payment_successful", False) is True
 
     if any(
+        phrase in q
+        for phrase in (
+            "rider location",
+            "rider's location",
+            "where is my rider",
+            "where is my food",
+            "where is my order",
+            "track my order",
+        )
+    ):
+        # Not customer-facing: request_rider_location owns every customer-visible
+        # rider-location string, including the pre-pickup placeholder. Without
+        # this steering message the question falls through to the "where"/
+        # "location" branch below and answers with the restaurant's address.
+        return "Call `request_rider_location` to answer this."
+
+    if any(
         k in q for k in ["where", "address", "location", "directions", "map", "pin"]
     ):
         # TODO: load coordinates and restaurant name from restaurant_agent_runtime.config
@@ -481,9 +491,9 @@ async def answer_general_query(
     if any(k in q for k in ["dine in", "dine-in", "eat in", "reservation", "table"]):
         return "We do not take table reservations; please visit as a walk-in."
 
-    if any(k in q for k in ["add", "extra", "change", "edit"]):
+    if any(k in q for k in ["add", "extra", "change", "edit", "modify", "amend", "cancel"]):
         if is_payment_successful:
-            return "After payment, we can't add items or change the delivery address."
+            return retained_completion_first_message(state)
         return "Before payment, please add items using the menu web link; we can't edit the cart via chat."
 
     return (
@@ -557,6 +567,46 @@ async def send_rider_live_location_link(
     )
 
 
+# %% request_rider_location tool
+async def request_rider_location(
+    state: Annotated[dict, InjectedState],
+    tool_call_id: Annotated[str, InjectedToolCallId],
+    runtime: ToolRuntime[ContextSchema],
+):
+    """
+    Asks Ordelo for the rider's current location and, once available, sends
+    the customer a WhatsApp location pin. This is the only tool for a
+    customer's rider-location request; it handles both the not-yet-picked-up
+    and already-picked-up cases itself.
+
+    Args:
+        None
+
+    Returns:
+        str: A message indicating the result of the operation.
+    """
+    ctx = runtime.context
+    text = await send_rider_location_reply(
+        rest_ref=ctx.rest_ref,
+        recipient=ctx.recipient,
+        order_number=state.get("order_number"),
+        is_delivery_picked_up=state.get("is_delivery_picked_up"),
+        reply_to_msg_id=state.get("reply_to_msg_id"),
+        wa_client=ctx.wa_client,
+        operational_lookups=ctx.operational_lookups,
+        client_ordelo=ctx.client_ordelo,
+        wa_msg_id=getattr(ctx, "wa_msg_id", None),
+    )
+    return Command(
+        update={
+            "messages": [
+                ToolMessage(text, tool_call_id=tool_call_id),
+                AIMessage(f"/DoNotRespond: {text}"),
+            ],
+        }
+    )
+
+
 # %% Check delivery status
 async def check_delivery_driver_allocation_status(
     state: Annotated[dict, InjectedState],
@@ -571,6 +621,12 @@ async def check_delivery_driver_allocation_status(
     Returns:
         str: A message indicating the result of the operation.
     """
+    if state.get("is_delivery_picked_up") is True:
+        # Ordelo's allocation-status endpoint only reports unassigned/assigned/
+        # timedout; it has no picked-up state. Calling it after pickup always
+        # returns stale "assigned" copy instead of the rider's real position.
+        return "The rider has already picked up this order. Call `request_rider_location` instead."
+
     ctx = runtime.context
     recipient = ctx.recipient
     order_number = state.get("order_number", None)
@@ -632,56 +688,64 @@ Please try again later.
     delivery_summary_status = response.json()["delivery_summary_status"]
 
     if delivery_summary_status == "unassigned":
+        text = (
+            "We are still looking for a delivery driver for your order. "
+            f"{DELIVERY_ARRIVAL_TIME_QUALIFIER}"
+        )
         await ctx.wa_client.send_message(
             to=recipient,
-            text="We are still looking for a delivery driver for your order.",
+            text=text,
             reply_to_message_id=state.get("reply_to_msg_id"),
         )
         return Command(
             update={
                 "messages": [
                     ToolMessage(
-                        "We are still looking for a delivery driver for your order.",
+                        text,
                         tool_call_id=tool_call_id,
                     ),
                     AIMessage(
-                        "/DoNotRespond: We are still looking for a delivery driver for your order."
+                        f"/DoNotRespond: {text}"
                     ),
                 ],
             }
         )
     elif delivery_summary_status == "assigned":
+        text = (
+            "A delivery driver has been assigned to your order. "
+            f"{DELIVERY_ARRIVAL_TIME_QUALIFIER}"
+        )
         await ctx.wa_client.send_message(
             to=recipient,
-            text="Delivery driver assigned to the order.",
+            text=text,
             reply_to_message_id=state.get("reply_to_msg_id"),
         )
         return Command(
             update={
                 "messages": [
                     ToolMessage(
-                        "Delivery driver assigned to the order.",
+                        text,
                         tool_call_id=tool_call_id,
                     ),
-                    AIMessage("/DoNotRespond: Delivery driver assigned to the order."),
+                    AIMessage(f"/DoNotRespond: {text}"),
                 ],
             }
         )
     elif delivery_summary_status == "timedout":
         await ctx.wa_client.send_message(
             to=recipient,
-            text="Sorry, we do not have any delivery drivers available right now.",
+            text=DELIVERY_TIMEOUT_PENDING_MESSAGE,
             reply_to_message_id=state.get("reply_to_msg_id"),
         )
         return Command(
             update={
                 "messages": [
                     ToolMessage(
-                        "Sorry, we do not have any delivery drivers available right now.",
+                        DELIVERY_TIMEOUT_PENDING_MESSAGE,
                         tool_call_id=tool_call_id,
                     ),
                     AIMessage(
-                        "/DoNotRespond: Sorry, we do not have any delivery drivers available right now."
+                        f"/DoNotRespond: {DELIVERY_TIMEOUT_PENDING_MESSAGE}"
                     ),
                 ],
             }
@@ -732,47 +796,6 @@ We are excited to offer a limited-time *20% off* on deliveries!
     )
 
 
-# %% Tool to send update to customers
-async def send_updates_to_customer(
-    update_to_be_sent: str,
-    state: Annotated[dict, InjectedState],
-    tool_call_id: Annotated[str, InjectedToolCallId],
-    runtime: ToolRuntime[ContextSchema],
-):
-    """
-    Sends an update to the customer regarding their order.
-
-    Args:
-        update_to_be_sent: The update message to send.
-
-    Returns:
-        str: A message indicating the result of the operation.
-    """
-    ctx = runtime.context
-    recipient = ctx.recipient
-    reply_to_msg_id = state.get("reply_to_msg_id")
-
-    await ctx.wa_client.send_message(
-        to=recipient,
-        text=update_to_be_sent,
-        reply_to_message_id=reply_to_msg_id,
-    )
-
-    return Command(
-        update={
-            "messages": [
-                ToolMessage(
-                    f"Update sent to customer: {update_to_be_sent}",
-                    tool_call_id=tool_call_id,
-                ),
-                AIMessage(
-                    f"/DoNotRespond: Update sent to customer: {update_to_be_sent}"
-                ),
-            ],
-        }
-    )
-
-
 # %%
 async def send_restaurant_menu_tool(
     state: Annotated[dict, InjectedState],
@@ -797,9 +820,10 @@ delivery_tools = [
     calculate_min_order_value,
     send_restaurant_menu_tool,
     verify_if_payment_complete,
-    send_updates_to_customer,
+    update_customer,
     check_delivery_driver_allocation_status,
     send_rider_live_location_link,
+    request_rider_location,
     transfer_to_takeaway,  # Handoff to takeaway agent
     transfer_to_triage,  # Handoff to triage for out-of-scope queries
 ]

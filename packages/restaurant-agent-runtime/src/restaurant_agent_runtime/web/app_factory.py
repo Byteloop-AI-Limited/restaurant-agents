@@ -83,7 +83,9 @@ def _register_whatsapp_handlers(
     wa = runtime.async_wa_client
 
     async def bound_closed_message(client, message):
-        return await send_closed_message(client, message, runtime=runtime)
+        return await send_closed_message(
+            client, message, runtime=runtime, graph_adapter=graph_adapter
+        )
 
     async def bound_reset(client, message):
         return await reset_thread(client, message, runtime=runtime)
@@ -95,7 +97,7 @@ def _register_whatsapp_handlers(
 
     async def bound_graph(client, message):
         return await handle_wa_msg_in_graph(
-            client, message, graph_adapter=graph_adapter
+            client, message, graph_adapter=graph_adapter, runtime=runtime
         )
 
     async def bound_location(client, message):
@@ -162,6 +164,7 @@ def _register_whatsapp_handlers(
         )
 
     wa.add_handlers(
+        MessageHandler(callback=bound_reset, filters=WHEN_RESET),
         MessageHandler(
             callback=bound_closed_message,
             filters=create_out_of_hours_filter(runtime),
@@ -172,7 +175,6 @@ def _register_whatsapp_handlers(
         #     callback=send_redirect_to_offline_mode,
         #     filters=create_overwatch_filter(runtime),
         # ),
-        MessageHandler(callback=bound_reset, filters=WHEN_RESET),
         MessageHandler(callback=bound_location, filters=filters.location),
         MessageHandler(
             callback=bound_payment_complete,

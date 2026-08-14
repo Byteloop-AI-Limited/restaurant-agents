@@ -15,6 +15,10 @@ Unit tests for OrdeloService HTTP client
     . test_get_or_create_customer_master_new_customer
     . test_get_or_create_customer_master_existing_customer_no_name
     . test_get_or_create_customer_master_existing_customer_with_name
+    . test_request_rider_location_posts_to_root_path
+    . test_request_rider_location_200_location_available
+    . test_request_rider_location_maps_error_codes
+    . test_request_rider_location_transport_failure_returns_zero_status
 """
 
 import sys
@@ -46,9 +50,10 @@ def ordelo_module():
 
 
 class FakeResponse:
-    def __init__(self, json_data=None, raise_exc=None):
+    def __init__(self, json_data=None, raise_exc=None, status_code=200):
         self._json = json_data or {}
         self._raise = raise_exc
+        self.status_code = status_code
 
     def raise_for_status(self):
         if self._raise:
@@ -56,6 +61,10 @@ class FakeResponse:
 
     def json(self):
         return self._json
+
+    @property
+    def is_success(self):
+        return 200 <= self.status_code < 300
 
 
 class FakeAsyncClient:
@@ -69,7 +78,7 @@ class FakeAsyncClient:
     async def __aexit__(self, exc_type, exc, tb):
         return False
 
-    async def post(self, url, json=None):
+    async def post(self, url, json=None, **kwargs):
         self._capture.append((url, json))
         return self._response
 
@@ -278,3 +287,116 @@ async def test_get_or_create_customer_master_existing_with_name_consent_missing(
 
     assert customer.cust_name == "Other"
     assert ask is True
+
+
+class RaisingAsyncClient:
+    """A client whose ``post`` fails at the transport level, before any response."""
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+    async def post(self, url, json=None, **kwargs):
+        raise httpx.ConnectError("boom")
+
+
+def _location_request(**overrides):
+    fields = dict(
+        rest_ref="ELAS",
+        order_number="ELAS-1",
+        location_requested_by="customer",
+        requester_id="447000000001",
+        callback_url="https://elas-agent.example.com/rider-event-hooks/ELAS/wa-location-response",
+    )
+    fields.update(overrides)
+    return fields
+
+
+@pytest.mark.asyncio
+async def test_request_rider_location_posts_to_root_path(ordelo_module, monkeypatch):
+    capture = _patch_httpx(
+        monkeypatch,
+        ordelo_module,
+        FakeResponse(
+            json_data={"request_id": "abc-123", "status": "rider_prompted"},
+            status_code=202,
+        ),
+    )
+    svc = _service(ordelo_module)
+    req = ordelo_module.WaLocationRequest(**_location_request())
+
+    outcome = await svc.request_rider_location(req)
+
+    assert outcome.status_code == 202
+    assert outcome.status == "rider_prompted"
+    assert outcome.request_id == "abc-123"
+    url, payload = capture[0]
+    assert url == "https://ordelo.test/wa-request-location"
+    assert payload["order_number"] == "ELAS-1"
+
+
+@pytest.mark.asyncio
+async def test_request_rider_location_200_location_available(ordelo_module, monkeypatch):
+    _patch_httpx(
+        monkeypatch,
+        ordelo_module,
+        FakeResponse(
+            json_data={"request_id": "abc-123", "status": "location_available"},
+            status_code=200,
+        ),
+    )
+    svc = _service(ordelo_module)
+    outcome = await svc.request_rider_location(
+        ordelo_module.WaLocationRequest(**_location_request())
+    )
+
+    assert outcome.status_code == 200
+    assert outcome.status == "location_available"
+    assert outcome.code is None
+
+
+@pytest.mark.parametrize(
+    ("status_code", "code"),
+    [
+        (403, "requester_not_authorized"),
+        (404, "active_dispatch_not_found"),
+        (409, "food_not_picked_up"),
+        (409, "delivery_not_inflight"),
+        (422, "invalid_payload"),
+        (502, "callback_delivery_failed"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_request_rider_location_maps_error_codes(
+    ordelo_module, monkeypatch, status_code, code
+):
+    _patch_httpx(
+        monkeypatch,
+        ordelo_module,
+        FakeResponse(json_data={"detail": {"code": code}}, status_code=status_code),
+    )
+    svc = _service(ordelo_module)
+    outcome = await svc.request_rider_location(
+        ordelo_module.WaLocationRequest(**_location_request())
+    )
+
+    assert outcome.status_code == status_code
+    assert outcome.code == code
+
+
+@pytest.mark.asyncio
+async def test_request_rider_location_transport_failure_returns_zero_status(
+    ordelo_module, monkeypatch
+):
+    monkeypatch.setattr(
+        ordelo_module.httpx, "AsyncClient", lambda *a, **k: RaisingAsyncClient()
+    )
+    svc = _service(ordelo_module)
+    outcome = await svc.request_rider_location(
+        ordelo_module.WaLocationRequest(**_location_request())
+    )
+
+    assert outcome.status_code == 0
+    assert outcome.code is None

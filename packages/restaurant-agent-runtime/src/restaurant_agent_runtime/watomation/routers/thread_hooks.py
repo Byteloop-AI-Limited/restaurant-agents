@@ -312,12 +312,13 @@ async def hil_system_message(
             )
         recipient = result.data[0]["recipient"]
 
-    # Use the exact tool argument name 'update_to_be_sent' from delivery.py
-    system_msg = f"call tool `send_updates_to_customer` with update_to_be_sent: {request.update_message}"
+    state_update_dict = dict(request.state_update_dict or {})
+    state_update_dict.setdefault("active_agent", "delivery_agent")
+    system_msg = f"Call `update_customer` with message={request.update_message!r}"
     ai_response = await graph_adapter.run_rest_graph_with_custom_msg(
         recipient=recipient,
         system_msg=system_msg,
-        state_update_dict=request.state_update_dict,
+        state_update_dict=state_update_dict,
     )
     return {
         "status": "success",

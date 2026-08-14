@@ -1,8 +1,9 @@
 # Feature: Shared Takeaway WhatsApp Agent
 
 The takeaway agent is one standard node in the shared Restaurant Agent runtime.
-It handles collection-menu delivery, payment-state checks, and handoffs to
-delivery or triage. Its implementation and four default tools are shared; each
+It handles collection-menu delivery, payment-state checks, customer updates, and
+handoffs to delivery or triage. Its implementation and five default tools are
+shared; each
 restaurant application supplies a complete takeaway prompt and may use the
 documented customization seams.
 
@@ -17,6 +18,8 @@ for the complete ownership model.
 - [Standard graph adapter and runner](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agent_runner.py)
 - [Takeaway agent and ordered tools](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agents/takeaway.py)
 - [Shared menu and handoff tools](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agents/agent_harness.py)
+- [Retained-specialist lifecycle projection](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/specialist_lifecycle.py)
+- [Shared service-selection policy](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/service_selection.py)
 - [Fixed multi-agent graph](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agents/multi_agent.py)
 - [WhatsApp sending helpers](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agent_wa_senders.py)
 - [Callback handlers](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/watomation/on_callback_handler.py)
@@ -28,7 +31,7 @@ for the complete ownership model.
 
 ## Ownership and Composition
 
-- The shared runtime owns `build_takeaway_agent`, its four ordered default
+- The shared runtime owns `build_takeaway_agent`, its five ordered default
   tools, shared state/context, middleware, graph routing, checkpointing, repair,
   debug behavior, and common WhatsApp menu helpers.
 - Each app owns a complete `takeaway_agent_prompt.md` loaded through
@@ -40,19 +43,22 @@ for the complete ownership model.
 
 ## Detailed Flow Explanation
 
-1. Selecting Collection/Takeaway is handled by `select_service_handler()`, which
-   updates `active_agent` to `takeaway_agent` and invokes the injected
-   `GraphAdapter`.
-2. The standard graph routes to the takeaway node. `build_takeaway_agent()`
-   constructs a native LangChain agent with the app-owned complete prompt,
-   shared schemas and middleware, four default tools, and optional app-owned
-   extra tools.
-3. `send_takeaway_menu_tool()` delegates to the shared menu helper with
-   `order_type="takeaway"`. It derives recipient, thread, restaurant reference,
-   runtime WhatsApp client, and logo from `ContextSchema`.
-4. A successful menu send ends the turn with a `/DoNotRespond:` marker while
-   the customer orders through WhatsApp. A menu-send failure sends fallback
-   text and ends the turn.
+1. Selecting Collection/Takeaway is handled deterministically by
+   `select_service_handler()`. It calls the runtime-owned availability policy;
+   a normal recipient who is unavailable receives `Ordering is currently closed.`, while
+   an approved or Overwatch recipient proceeds without an LLM availability
+   check.
+2. An approved callback persists `active_agent="takeaway_agent"` and the
+   selection without invoking the model, then sends the collection menu through
+   the exact runtime-bound WhatsApp client.
+3. Typed explicit collection intent, collection callbacks, and transfer tools
+   use the same shared selection policy. A retained delivery or takeaway flow
+   preserves its current specialist; an open flow starts the selected service.
+   Informational, status, cancellation, and negated messages remain model-owned.
+4. `send_takeaway_menu_tool()` uses the same final availability guard for an
+   already-active conversation. It sends either the menu, the exact closed message,
+   or the concise retry-later fallback; it never asks the customer for the date
+   or time.
 5. `verify_if_payment_complete()` reads order summary, payment-link, and payment
    state to tell the model whether payment is complete, pending, or not yet
    ready.
@@ -64,16 +70,18 @@ for the complete ownership model.
    `terminate_conversation`.
 8. `takeaway_ready()` sends a direct runtime-bound WhatsApp notification when
    the order is ready for collection.
-9. `transfer_to_delivery` handles a service change.
-   `transfer_to_triage` handles out-of-scope intent. Shared transfer guards can
-   block a handoff while retained work remains active.
+9. `transfer_to_delivery` and `transfer_to_triage` are model adapters to that
+   same selection/lifecycle policy. Retained takeaway work blocks handoff; on
+   every model call during that state, the shared dynamic prompt states that
+   takeaway flow is in motion and handover is strictly prohibited.
 
 ## Ordered Default Tools
 
 1. `verify_if_payment_complete`
-2. `send_takeaway_menu_tool`
-3. `transfer_to_delivery`
-4. `transfer_to_triage`
+2. `update_customer`
+3. `send_takeaway_menu_tool`
+4. `transfer_to_delivery`
+5. `transfer_to_triage`
 
 The ordered list is part of the shared graph contract and is asserted in
 `tests/rest_agent/test_graph_contract.py`.
@@ -183,8 +191,9 @@ description: >
   not-ready state.
 - Recipient or thread mismatch in payment events returns `400`.
 - Cross-restaurant routes return `404` before graph work or external effects.
-- `retain_thread=True` keeps the thread active while pickup time is pending and
-  can block a handoff.
+- `retain_thread=True` keeps takeaway ownership while pickup time is pending.
+  Authoritative customer updates remain in scope; all service-selection paths
+  preserve the specialist until a lifecycle event explicitly releases it.
 - Pickup-time completion intentionally returns to triage for the standard
   termination tool.
 - Invalid callback data is logged and does not advance the graph.

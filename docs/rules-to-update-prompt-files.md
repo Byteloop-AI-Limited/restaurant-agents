@@ -66,6 +66,12 @@ the standard menu into a callback registry.
 - If intent is not clear from state, system messages, or conversation, call
   `ask_user_to_select_service`.
 - Do not guess service intent.
+- When a customer has asked a completed direct question, answer or acknowledge
+  that question first by passing the complete customer-facing text as
+  `message_before_selection`. The tool sends that text before its service
+  buttons and ends the turn.
+- Do not show the service menu while collecting missing feedback details,
+  waiting for an enquiry/consent choice, or transferring to a specialist.
 
 ### 2. Explicit specialized intent transfers immediately
 
@@ -113,7 +119,9 @@ identical to the implementation.
 - Keep simple replies to one short line where practical.
 - Use bullets only when multiple points are needed.
 - Avoid long paragraphs and internal implementation language.
-- Do not emit extra text after a tool-only handoff instruction.
+- Do not emit extra text after a tool-only handoff instruction. When a tool
+  sends both a reply and interactive buttons, place the complete reply in the
+  documented tool argument instead of producing a separate model response.
 
 ## Validation Checklist
 

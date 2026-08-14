@@ -33,6 +33,7 @@ from restaurant_agent_runtime.services.ordelo_service.datamodels.customer_master
 )
 from restaurant_agent_runtime.rest_agent.agent_wa_senders import select_enquiry_wa_send
 from restaurant_agent_runtime.services.ordelo_service.ordelo_service import OrdeloService
+from restaurant_agent_runtime.rest_agent.service_selection import route_service_selection
 
 _ENQUIRY_OPTION_MESSAGES = frozenset(
     {
@@ -194,17 +195,22 @@ async def select_service_handler(
         )
         return
 
-    order_type = {
+    service = {
         "delivery_agent": "delivery",
         "takeaway_agent": "takeaway",
     }.get(active_agent)
-    if order_type is not None and not runtime.operational_lookups.accepts_new_order(
-        order_type, recipient
-    ):
-        await wa.send_message(
-            to=recipient,
-            text="Sorry, new orders for that service have closed for today. You can still send us an enquiry.",
+    if service is not None:
+        await route_service_selection(
+            recipient=recipient,
+            service=service,
+            human_msg=callback_data.human_msg,
+            graph_adapter=graph_adapter,
+            runtime=runtime,
+            rest_ref=rest_ref,
         )
+        return
+
+    if rest_ref and not active_agent:
         await select_service_sender(
             recipient=recipient,
             wa_client=wa,
@@ -213,36 +219,7 @@ async def select_service_handler(
         )
         return
 
-    if rest_ref and active_agent:
-        human_msg = callback_data.human_msg
-        state_update_dict = {
-            "rest_ref": rest_ref,
-            "active_agent": active_agent,
-        }
-        msgs = [
-            HumanMessage(human_msg),
-        ]
-        await graph_adapter.run_rest_graph_with_custom_msg(
-            recipient=recipient,
-            msgs=msgs,
-            state_update_dict=state_update_dict,
-        )
-        return
-
-    elif rest_ref and not active_agent:
-        await select_service_sender(
-            recipient=recipient,
-            wa_client=wa,
-            rest_ref=rest_ref,
-            operational_lookups=runtime.operational_lookups,
-        )
-        return
-
-    else:
-        logger.error(
-            f"Incomplete callback data for /SelectService: {callback_data_dict}"
-        )
-        return
+    logger.error(f"Incomplete callback data for /SelectService: {callback_data_dict}")
 
 
 # %% Enquiry selection handler
