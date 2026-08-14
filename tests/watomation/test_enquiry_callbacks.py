@@ -11,6 +11,7 @@ from restaurant_agent_runtime.rest_agent.agent_wa_senders import (
     select_enquiry_wa_send,
 )
 from restaurant_agent_runtime.watomation import on_callback_handler
+from restaurant_agent_runtime.rest_agent import service_selection
 
 
 def _callback(*, callback_id: str, data: dict):
@@ -160,7 +161,10 @@ class FakeOperationalLookups:
 @pytest.mark.asyncio
 async def test_closed_service_sends_only_the_deterministic_closed_message():
     ops = FakeOperationalLookups(delivery_open=False)
-    graph_adapter = SimpleNamespace(run_rest_graph_with_custom_msg=AsyncMock())
+    graph_adapter = SimpleNamespace(
+        debug_state_values=AsyncMock(return_value={"retain_thread": False}),
+        run_rest_graph_with_custom_msg=AsyncMock(),
+    )
     runtime = SimpleNamespace(
         identity=SimpleNamespace(rest_ref="BNAT"),
         operational_lookups=ops,
@@ -199,7 +203,10 @@ async def test_closed_service_sends_only_the_deterministic_closed_message():
 @pytest.mark.asyncio
 async def test_takeaway_callback_persists_and_sends_menu_without_model(monkeypatch):
     ops = FakeOperationalLookups(takeaway_open=True)
-    graph_adapter = SimpleNamespace(run_rest_graph_with_custom_msg=AsyncMock())
+    graph_adapter = SimpleNamespace(
+        debug_state_values=AsyncMock(return_value={"retain_thread": False}),
+        run_rest_graph_with_custom_msg=AsyncMock(),
+    )
     pool = object()
     runtime = SimpleNamespace(
         identity=SimpleNamespace(rest_ref="SFCS"),
@@ -209,12 +216,12 @@ async def test_takeaway_callback_persists_and_sends_menu_without_model(monkeypat
         presentation=SimpleNamespace(logo_url="logo"),
     )
     monkeypatch.setattr(
-        on_callback_handler,
+        service_selection,
         "get_config_for_recipient",
         AsyncMock(return_value=({"configurable": {"thread_id": "thread-1"}}, False)),
     )
     menu_sender = AsyncMock(return_value="sent")
-    monkeypatch.setattr(on_callback_handler, "send_new_order_menu", menu_sender)
+    monkeypatch.setattr(service_selection, "send_new_order_menu", menu_sender)
 
     callback = _callback(
         callback_id="takeaway-direct",
@@ -244,6 +251,52 @@ async def test_takeaway_callback_persists_and_sends_menu_without_model(monkeypat
     assert second["persist_only"] is True
     assert "/DoNotRespond:" in second["msgs"][0].content
     menu_sender.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_retained_service_callback_keeps_the_current_specialist():
+    graph_adapter = SimpleNamespace(
+        debug_state_values=AsyncMock(
+            return_value={
+                "active_agent": "delivery_agent",
+                "retain_thread": True,
+            }
+        ),
+        run_rest_graph_with_custom_msg=AsyncMock(),
+    )
+    wa_client = SimpleNamespace(send_message=AsyncMock())
+    runtime = SimpleNamespace(
+        identity=SimpleNamespace(rest_ref="SFCS"), async_wa_client=wa_client
+    )
+    callback = _callback(
+        callback_id="retained-delivery-service-selection",
+        data={
+            "action": "/SelectService",
+            "rest_ref": "sfcs",
+            "active_agent": "takeaway_agent",
+            "human_msg": "I want takeaway",
+        },
+    )
+
+    await on_callback_handler.select_service_handler(
+        SimpleNamespace(),
+        callback,
+        callback_data_type=CallbackButtonData,
+        graph_adapter=graph_adapter,
+        runtime=runtime,
+        select_service_sender=AsyncMock(),
+    )
+
+    graph_adapter.debug_state_values.assert_awaited_once_with(recipient="447000000001")
+    graph_adapter.run_rest_graph_with_custom_msg.assert_awaited_once()
+    kwargs = graph_adapter.run_rest_graph_with_custom_msg.await_args.kwargs
+    assert kwargs["recipient"] == "447000000001"
+    assert kwargs["msgs"][0] == HumanMessage("I want takeaway")
+    assert "current delivery order first" in kwargs["msgs"][1].content
+    assert kwargs["persist_only"] is True
+    wa_client.send_message.assert_awaited_once_with(
+        to="447000000001", text=kwargs["msgs"][1].content
+    )
 
 
 @pytest.mark.asyncio
