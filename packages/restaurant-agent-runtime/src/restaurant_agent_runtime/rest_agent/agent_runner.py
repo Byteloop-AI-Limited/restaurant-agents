@@ -113,36 +113,59 @@ def _build_graph(
 
 def _find_malformed_tool_call_tail(
     messages: list[BaseMessage],
-) -> tuple[int, list[str]] | None:
-    """Return the first malformed assistant tool-call turn in the persisted tail.
+) -> tuple[int, str, list[str]] | None:
+    """Return the first malformed assistant/tool-message turn.
 
-    A valid assistant tool-call message must be followed immediately by ToolMessage
-    responses for every tool_call_id before any other message type appears.
+    Tool responses must immediately follow the assistant tool-call message, use
+    one of its pending ids, and answer every call before another message begins.
+    The returned index is the first message that must be removed to restore a
+    valid prefix.
     """
+    pending_tool_call_ids: set[str] = set()
+    assistant_idx: int | None = None
+
     for idx, msg in enumerate(messages):
-        if not isinstance(msg, AIMessage):
-            continue
-
-        tool_calls = getattr(msg, "tool_calls", None) or []
-        expected_tool_call_ids = [
-            call.get("id")
-            for call in tool_calls
-            if isinstance(call, dict) and call.get("id")
-        ]
-        if not expected_tool_call_ids:
-            continue
-
-        pending_tool_call_ids = set(expected_tool_call_ids)
-        cursor = idx + 1
-        while cursor < len(messages) and isinstance(messages[cursor], ToolMessage):
-            tool_call_id = getattr(messages[cursor], "tool_call_id", None)
-            pending_tool_call_ids.discard(tool_call_id)
-            cursor += 1
-            if not pending_tool_call_ids:
-                break
-
         if pending_tool_call_ids:
-            return idx, sorted(pending_tool_call_ids)
+            if not isinstance(msg, ToolMessage):
+                repair_idx = assistant_idx if assistant_idx is not None else idx
+                return (
+                    repair_idx,
+                    "missing_tool_responses",
+                    sorted(pending_tool_call_ids),
+                )
+
+            tool_call_id = msg.tool_call_id
+            if tool_call_id not in pending_tool_call_ids:
+                repair_idx = assistant_idx if assistant_idx is not None else idx
+                return (
+                    repair_idx,
+                    "unexpected_tool_response",
+                    [tool_call_id, *sorted(pending_tool_call_ids)],
+                )
+
+            pending_tool_call_ids.remove(tool_call_id)
+            continue
+
+        if isinstance(msg, ToolMessage):
+            return idx, "orphan_tool_response", [msg.tool_call_id]
+
+        if isinstance(msg, AIMessage):
+            tool_calls = getattr(msg, "tool_calls", None) or []
+            pending_tool_call_ids = {
+                call["id"]
+                for call in tool_calls
+                if isinstance(call, dict) and call.get("id")
+            }
+            if pending_tool_call_ids:
+                assistant_idx = idx
+
+    if pending_tool_call_ids:
+        repair_idx = assistant_idx if assistant_idx is not None else 0
+        return (
+            repair_idx,
+            "missing_tool_responses",
+            sorted(pending_tool_call_ids),
+        )
 
     return None
 
@@ -158,20 +181,27 @@ async def _repair_malformed_tool_call_tail(graph, config: dict) -> bool:
         return False
 
     logger.critical("Repairing malformed tool-call tail before model invoke")
-    malformed_idx, missing_tool_call_ids = malformed_tail
+    malformed_idx, reason, tool_call_ids = malformed_tail
+    malformed_messages = messages[malformed_idx:]
     messages_to_remove = [
         RemoveMessage(id=msg.id)
-        for msg in messages[malformed_idx:]
+        for msg in malformed_messages
         if getattr(msg, "id", None)
     ]
-    if not messages_to_remove:
+    if len(messages_to_remove) != len(malformed_messages):
+        logger.error(
+            "Cannot safely repair malformed tool-call tail because a message has no id",
+            malformed_index=malformed_idx,
+            reason=reason,
+        )
         return False
 
     logger.warning(
         "Repairing malformed tool-call tail before model invoke",
         malformed_index=malformed_idx,
         removed_count=len(messages_to_remove),
-        missing_tool_call_ids=missing_tool_call_ids,
+        reason=reason,
+        tool_call_ids=tool_call_ids,
     )
     await graph.aupdate_state(
         config=config,
@@ -179,6 +209,18 @@ async def _repair_malformed_tool_call_tail(graph, config: dict) -> bool:
         as_node="toolNode",
     )
     return True
+
+
+def _is_tool_protocol_error(error: openai.BadRequestError) -> bool:
+    """Return whether OpenAI rejected malformed assistant/tool message history."""
+    body = error.body if isinstance(error.body, dict) else {}
+    message = str(body.get("message") or error).lower()
+    return (
+        "must be followed by tool messages" in message
+        and "tool_call_id" in message
+    ) or (
+        "messages with role 'tool'" in message and "tool_calls" in message
+    )
 
 
 async def _terminate_session_on_tool_call_error(
@@ -252,6 +294,7 @@ async def run_rest_graph_with_custom_msg(
                 "active_agent": "triage_agent",
                 "customer_address": customer_address,
                 "ask_for_consent": ask_for_consent,
+                "retain_thread": False,
                 "messages": [
                     SystemMessage(
                         f"user name is {wa_name}. Address the user at key points in the conversation. Call tool `send_welcome_message`"
@@ -319,11 +362,7 @@ async def run_rest_graph_with_custom_msg(
             input=ip_msgs, config=config, context=context_schema
         )
     except openai.BadRequestError as e:
-        err_txt = str(e)
-        if (
-            "must be followed by tool messages responding to each 'tool_call_id'"
-            not in err_txt
-        ):
+        if not _is_tool_protocol_error(e):
             raise
 
         repaired = await _repair_malformed_tool_call_tail(graph=graph, config=config)
