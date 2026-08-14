@@ -251,6 +251,7 @@ async def run_rest_graph_with_custom_msg(
     state_update_dict: dict = None,
     config: dict = None,
     persist_only: bool = False,
+    wa_msg_id: str | None = None,
     *,
     runtime: RestaurantRuntime,
     graph_builder,
@@ -355,6 +356,7 @@ async def run_rest_graph_with_custom_msg(
         payment_settings=runtime.settings.payment,
         client_ordelo=runtime.settings.database_client,
         operational_lookups=runtime.operational_lookups,
+        wa_msg_id=wa_msg_id,
     )
 
     try:

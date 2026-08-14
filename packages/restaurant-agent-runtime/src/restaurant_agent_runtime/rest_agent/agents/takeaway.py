@@ -31,6 +31,7 @@ from restaurant_agent_runtime.rest_agent.agents.agent_harness import (
     send_takeaway_menu_tool,
     transfer_to_delivery,
     transfer_to_triage,
+    update_customer,
 )
 from restaurant_agent_runtime.rest_agent.prompt_runtime import render_prompt_middleware
 
@@ -70,6 +71,7 @@ async def verify_if_payment_complete(
 
 takeaway_tools = [
     verify_if_payment_complete,
+    update_customer,
     send_takeaway_menu_tool,
     transfer_to_delivery,  # Handoff to delivery agent
     transfer_to_triage,  # Handoff to triage for out-of-scope queries and termination

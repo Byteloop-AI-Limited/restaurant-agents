@@ -2,7 +2,6 @@
 
 # %%
 
-import asyncio
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
@@ -20,6 +19,12 @@ from restaurant_agent_runtime.services.order_management.takeaway_pymodels import
     TakeawayReadyPayload,
 )
 from restaurant_agent_runtime.watomation.background_task_runner import run_background_task
+from restaurant_agent_runtime.rest_agent.specialist_lifecycle import (
+    DELIVERY_PAYMENT_PENDING_RIDER_MESSAGE,
+    SpecialistFlowView,
+    notify_release_and_optionally_terminate,
+    retained_specialist_state,
+)
 from restaurant_agent_runtime.web.dependencies import (
     get_graph_adapter,
     get_restaurant_runtime,
@@ -73,6 +78,17 @@ def format_time_for_user(pickup_time: str | None) -> str:
     return value
 
 
+def _is_duplicate_delivery_payment_event(state: dict, food_order: FoodOrder) -> bool:
+    """Return whether this delivery payment event already owns the checkpoint."""
+    flow = SpecialistFlowView.from_state(state)
+    return (
+        flow.owns_specialist_work
+        and flow.active_agent == "delivery_agent"
+        and flow.is_payment_successful
+        and state.get("order_id") == food_order.order_id
+    )
+
+
 # %% Payment Complete
 @router.post(
     "/{rest_ref}/payment-complete/{recipient}/{thread_id}",
@@ -103,6 +119,29 @@ async def payment_complete(
             status_code=400,
             detail="thread_id in path does not match payload.thread_id",
         )
+
+    if food_order.action == "delivery":
+        try:
+            current_state = await graph_adapter.debug_state_values(recipient=recipient)
+        except Exception:
+            # The first event must still reach the customer if a transient
+            # checkpoint read fails. This is deliberately best-effort replay
+            # protection, not a new durable event ledger.
+            logger.exception(
+                "Could not inspect payment replay state for recipient {}", recipient
+            )
+        else:
+            if _is_duplicate_delivery_payment_event(current_state, food_order):
+                logger.info(
+                    "Ignoring replayed delivery payment event for order {}",
+                    food_order.order_id,
+                )
+                return {
+                    "status": "success",
+                    "order_id": food_order.order_id,
+                    "order_number": food_order.order_number,
+                    "payment_status": food_order.payment_status,
+                }
 
     logger.info(f"food_order: {food_order}")
     logger.info(f"recipient: {recipient}")
@@ -138,15 +177,20 @@ async def payment_complete(
             "delivery_payment_complete",
             graph_adapter.run_rest_graph_with_custom_msg,
             recipient=recipient,
-            system_msg="User has been already thanked for the payment. Only say that we will notify when a delivery driver is assigned.",
-            state_update_dict={
-                "active_agent": "delivery_agent",
-                "order_id": food_order.order_id,
-                "order_number": order_number,
-                "reply_to_msg_id": msg.id,
-                "is_payment_successful": True,
-                "retain_thread": True,  # RETAIN the thread
-            },
+            system_msg=(
+                "AUTHORITATIVE DELIVERY PAYMENT EVENT: the customer has placed an "
+                f"order ({food_order.order_id}/{order_number}); payment is confirmed "
+                "and delivery-driver allocation is pending. Do not ask the customer "
+                "to place another order, select menu items, or make payment again. "
+                "Call `update_customer` with "
+                f"message={DELIVERY_PAYMENT_PENDING_RIDER_MESSAGE!r}. Then end this turn."
+            ),
+            state_update_dict=retained_specialist_state(
+                "delivery",
+                order_id=food_order.order_id,
+                order_number=order_number,
+                reply_to_msg_id=msg.id,
+            ),
         )
     else:
         # Acknowlege the order for takeaway, not the payment
@@ -162,7 +206,8 @@ async def payment_complete(
 
         # Collection order received, wait for pickup time confirmation
         system_msg = (
-            "Thank user for the order. We will confirm the pickup time in a moment"
+            "Call `update_customer` with "
+            "message='We will confirm the pickup time in a moment.'"
         )
 
         background_tasks.add_task(
@@ -171,14 +216,12 @@ async def payment_complete(
             graph_adapter.run_rest_graph_with_custom_msg,
             recipient=recipient,
             system_msg=system_msg,
-            state_update_dict={
-                "active_agent": "takeaway_agent",
-                "order_id": food_order.order_id,
-                "order_number": order_number,
-                "reply_to_msg_id": msg.id,
-                "is_payment_successful": True,
-                "retain_thread": True,
-            },
+            state_update_dict=retained_specialist_state(
+                "takeaway",
+                order_id=food_order.order_id,
+                order_number=order_number,
+                reply_to_msg_id=msg.id,
+            ),
         )
 
     return {
@@ -270,29 +313,6 @@ async def takeaway_ready(
 
 # %% Takeaway Pickup Time Updated
 
-async def run_customer_collection_completions_sequence(
-    customer_id: str,
-    first_system_msg: str,
-    first_state_update_dict: dict,
-    second_system_msg: str,
-    second_state_update_dict: dict,
-    graph_adapter: GraphAdapter,
-):
-    await graph_adapter.run_rest_graph_with_custom_msg(
-        recipient=customer_id,
-        system_msg=first_system_msg,
-        state_update_dict=first_state_update_dict,
-    )
-
-    await asyncio.sleep(5)
-
-    await graph_adapter.run_rest_graph_with_custom_msg(
-        recipient=customer_id,
-        system_msg=second_system_msg,
-        state_update_dict=second_state_update_dict,
-    )
-
-
 @router.post(
     "/{rest_ref}/takeaway-pickup-time-updated",
     summary="Notify customer of confirmed takeaway pickup time",
@@ -316,28 +336,19 @@ async def takeaway_pickup_time_updated(
         f"takeaway_pickup_time_updated: order_number={summary.order_number} recipient={recipient} pickup_time={summary.pickup_time}"
     )
 
-    # Notify user on the pickup_time
     pickup_time_str = format_time_for_user(summary.pickup_time)
-    first_system_msg = f"inform the user `The order will be ready for collection at *{pickup_time_str}*. Call the restaurant for any queries`"
-    first_state_update_dict = {
-        "active_agent": "takeaway_agent",
-        "order_number": summary.order_number,
-    }
-
-    # Terminate the conversation
-    second_system_msg = "Call `terminate_conversation` to end the conversation"
-    second_state_update_dict = {"active_agent": "triage_agent"}
-
     background_tasks.add_task(
         run_background_task,
         "customer_collection_completion_sequence",
-        run_customer_collection_completions_sequence,
-        customer_id=recipient,
-        first_system_msg=first_system_msg,
-        first_state_update_dict=first_state_update_dict,
-        second_system_msg=second_system_msg,
-        second_state_update_dict=second_state_update_dict,
+        notify_release_and_optionally_terminate,
+        recipient=recipient,
+        specialist="takeaway_agent",
+        message=(
+            f"The order will be ready for collection at *{pickup_time_str}*. "
+            "Call the restaurant for any queries."
+        ),
         graph_adapter=graph_adapter,
+        terminate=True,
     )
 
     return {

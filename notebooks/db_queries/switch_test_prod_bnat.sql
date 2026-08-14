@@ -4,7 +4,7 @@
 
 select admins, city, * from restaurant_master where rest_ref = 'BNAT';
 
-select * from ordelo_config where config_key like '%_APP_URL';
+select * from ordelo_config where config_key like '%BNAT_APP_URL';
 
 select * from rider_master where rider_name in ('Lohith', 'Rahul', 'Bloop');
 select * from rider_master where is_in_shift = true;
@@ -14,7 +14,7 @@ select * from rider_master where is_in_shift = true;
 
 update restaurant_master
 -- set admins = Array['447919202938', '447448440754'],
--- +44 7936 359321 - azz
+-- 447936359321 - azz
 -- 447932085625 - bab
 set admins = Array['447919202938', '447932085625', '447936359321'],
     rest_stale_active_threads_minutes = 10,
@@ -31,6 +31,7 @@ set admins = Array['447919202938', '447932085625', '447936359321'],
 where rest_ref='BNAT';
 
 update ordelo_config set config_value = 'https://rest-agent-test.ordelo.app' where config_key = 'BNAT_APP_URL';
+update ordelo_config set config_value = 'https://bnat-agent.fly.dev' where config_key = 'BNAT_APP_URL';
 
 -- Cache reset calls, Should be run everytime after changing the app URL
 SELECT * FROM ordelo_post('BNAT_APP_URL', '/restaurant-base-url-cache/reset');

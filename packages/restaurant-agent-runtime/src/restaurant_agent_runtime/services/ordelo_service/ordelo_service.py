@@ -33,6 +33,10 @@ from restaurant_agent_runtime.services.ordelo_service.datamodels.customer_master
     RestaurantFeedbackRequest,
 )
 from restaurant_agent_runtime.services.ordelo_service.datamodels.cust_rest_map_pymodel import CustRestMap
+from restaurant_agent_runtime.services.ordelo_service.datamodels.wa_location_pymodel import (
+    WaLocationRequest,
+    WaLocationRequestOutcome,
+)
 
 
 class OrdeloService(BaseModel):
@@ -144,6 +148,53 @@ class OrdeloService(BaseModel):
                     exc,
                 )
                 return None
+
+    async def request_rider_location(
+        self, request: WaLocationRequest
+    ) -> WaLocationRequestOutcome:
+        """Ask Ordelo's WaLocation module for a rider's current location.
+
+        Unlike every other method here, this does not swallow non-2xx
+        responses into ``None``: the caller must distinguish Ordelo's
+        conflict codes (``food_not_picked_up``, ``delivery_not_inflight``)
+        and authorization failures, each of which maps to different
+        customer-facing copy.
+        """
+        base_url = await self._get_base_url()
+        url = f"{base_url}/wa-request-location"
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.post(
+                    url, json=request.model_dump(exclude_none=True), timeout=10.0
+                )
+            except httpx.HTTPError as exc:
+                logger.error(
+                    "Could not reach Ordelo for rider location, order {}: {}",
+                    request.order_number,
+                    exc,
+                )
+                return WaLocationRequestOutcome(status_code=0)
+
+            try:
+                body = response.json()
+            except ValueError:
+                body = {}
+
+            if response.is_success:
+                return WaLocationRequestOutcome(
+                    status_code=response.status_code,
+                    status=body.get("status"),
+                    request_id=body.get("request_id"),
+                )
+
+            code = (body.get("detail") or {}).get("code") if isinstance(body, dict) else None
+            logger.error(
+                "Ordelo rejected rider location request for order {}: {} {}",
+                request.order_number,
+                response.status_code,
+                code,
+            )
+            return WaLocationRequestOutcome(status_code=response.status_code, code=code)
 
     async def get_or_create_customer_master(
         self, recipient: str, wa_name: Optional[str] = None

@@ -21,6 +21,7 @@ WhatsApp message handlers for customer interactions
 from datetime import datetime, timezone
 
 import httpx
+from langchain_core.messages import AIMessage, HumanMessage
 from pywa.types import Message, MessageStatus
 from pywa_async import WhatsApp, filters
 
@@ -30,6 +31,16 @@ from restaurant_agent_runtime.services.maps_service import AddressResolver
 from restaurant_agent_runtime.services.thread_management import ThreadHandler
 from restaurant_agent_runtime.services.tz_utils import UK_TZ
 from restaurant_agent_runtime.watomation.dedup import wa_dedup
+from restaurant_agent_runtime.rest_agent.service_selection import (
+    classify_service_selection,
+    route_service_selection,
+)
+from restaurant_agent_runtime.rest_agent.specialist_lifecycle import SpecialistFlowView
+from restaurant_agent_runtime.rest_agent.refund_support import (
+    is_refund_timing_query,
+    refund_reply_for_state,
+    refund_state_unavailable_reply,
+)
 # %% After-hours guard
 def _message_time_uk(msg: Message) -> datetime | None:
     ts = getattr(msg, "timestamp", None) or getattr(msg, "timestamp_ms", None)
@@ -98,8 +109,38 @@ def is_ordering_request(msg: Message) -> bool:
 
 
 async def send_closed_message(
-    wa: WhatsApp, msg: Message, *, runtime: RestaurantRuntime
+    wa: WhatsApp,
+    msg: Message,
+    *,
+    runtime: RestaurantRuntime,
+    graph_adapter: GraphAdapter | None = None,
 ):
+    # Existing paid/in-progress work is not a new-order attempt.  This handler
+    # runs before the normal graph message path, so it must not strand a
+    # retained specialist after hours.
+    if graph_adapter is not None:
+        try:
+            state = await graph_adapter.debug_state_values(recipient=msg.sender)
+        except Exception:
+            logger.exception(
+                "Could not inspect retained state for after-hours recipient {}",
+                msg.sender,
+            )
+            await graph_adapter.run_rest_graph_with_custom_msg(
+                recipient=msg.sender,
+                human_msg=msg.text,
+                wa_name=msg.from_user.name,
+            )
+            return
+        else:
+            if SpecialistFlowView.from_state(state).owns_specialist_work:
+                await graph_adapter.run_rest_graph_with_custom_msg(
+                    recipient=msg.sender,
+                    human_msg=msg.text,
+                    wa_name=msg.from_user.name,
+                )
+                return
+
     if is_ordering_request(msg):
         await wa.send_message(to=msg.sender, text="Ordering is currently closed.")
         return
@@ -189,14 +230,56 @@ async def simulate_payment_complete(
 # %% Handle text in graph
 @wa_dedup
 async def handle_wa_msg_in_graph(
-    wa: WhatsApp, msg: Message, *, graph_adapter: GraphAdapter
+    wa: WhatsApp,
+    msg: Message,
+    *,
+    graph_adapter: GraphAdapter,
+    runtime: RestaurantRuntime,
 ):
     await msg.indicate_typing()
     human_msg = msg.text
     wa_name: str = msg.from_user.name
 
+    if is_refund_timing_query(human_msg):
+        try:
+            state = await graph_adapter.debug_state_values(recipient=msg.sender)
+        except Exception:
+            logger.exception(
+                "Could not read refund state for recipient {}; failing closed",
+                msg.sender,
+            )
+            reply = refund_state_unavailable_reply()
+        else:
+            reply = refund_reply_for_state(state)
+
+        try:
+            await graph_adapter.run_rest_graph_with_custom_msg(
+                recipient=msg.sender,
+                msgs=[HumanMessage(human_msg), AIMessage(reply)],
+                persist_only=True,
+            )
+        except Exception:
+            # The direct response stays deterministic even if the transcript
+            # cannot be persisted. Never send the refund query to the model.
+            logger.exception(
+                "Could not persist refund reply for recipient {}", msg.sender
+            )
+        await runtime.async_wa_client.send_message(to=msg.sender, text=reply)
+        return
+
+    service = classify_service_selection(human_msg)
+    if service is not None:
+        await route_service_selection(
+            recipient=msg.sender,
+            service=service,
+            human_msg=human_msg,
+            graph_adapter=graph_adapter,
+            runtime=runtime,
+        )
+        return
+
     await graph_adapter.run_rest_graph_with_custom_msg(
-        human_msg=human_msg, recipient=msg.sender, wa_name=wa_name
+        human_msg=human_msg, recipient=msg.sender, wa_name=wa_name, wa_msg_id=msg.id
     )
 
 
@@ -231,6 +314,13 @@ async def reset_thread(
 ):
     logger.info("=============== reset the thread ===============")
     recipient = msg.from_user.wa_id
+
+    if not runtime.operational_lookups.is_overwatch_recipient(recipient):
+        await wa.send_message(
+            to=recipient,
+            text="Reset is not available. Please continue in this conversation.",
+        )
+        return
 
     pool = await runtime.settings.database.get_pool()
     thread_handler = ThreadHandler(pool, agent=runtime.identity.rest_ref)
