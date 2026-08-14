@@ -118,6 +118,7 @@ database or WhatsApp clients pure or deeply immutable.
 | `TakeawayReadyPayload` | Restaurant-ready event |
 | `CallbackButtonData` | WhatsApp callback selection |
 | `StaleThreadCandidate` | Thread selected by the external scheduled job for termination |
+| `WaLocationCallbackPayload` | Ordelo's rider-location result for one outstanding request |
 
 ## Commands and Events
 
@@ -134,6 +135,7 @@ context. Events report something that has already happened.
 | Confirm delivery address | Rider entered Restaurant/customer area |
 | Update takeaway pickup time | Delivery timed out/completed |
 | Terminate stale Thread | Takeaway pickup time updated/order ready |
+| Request rider location (customer) | Rider location observed/reported |
 
 ## Invariants
 
@@ -158,8 +160,8 @@ context. Events report something that has already happened.
   of private shared-runtime internals.
 - The standard WhatsApp surface exposes the side-effecting `/paid3100` payment
   simulator for the sender's latest eligible order. `/test` and `/test-t` are
-  absent; `/reset` changes only Thread lifecycle and `/debug` is read-only and
-  authorized-user gated.
+  absent; `/reset` is an Overwatch-only Thread-lifecycle escape hatch and
+  `/debug` is read-only and authorized-user gated.
 
 ## Code References (Machine-Readable)
 

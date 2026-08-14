@@ -32,6 +32,8 @@ decision; add a new ADR that supersedes it.
 | [0015](0015-app-owned-enquiry-menus.md) | Accepted | App-owned bounded enquiry menus |
 | [0016](0016-runtime-owned-operational-lookup-cache.md) | Accepted | Runtime-owned operational lookup cache |
 | [0017](0017-ordelo-owned-feedback-admin-notifications.md) | Accepted | Ordelo-owned feedback admin notifications |
+| [0018](0018-retained-specialist-lifecycle-and-service-selection.md) | Accepted | Retained specialist lifecycle and service selection |
+| [0019](0019-walocation-customer-rider-location-client-integration.md) | Accepted | WaLocation customer rider-location client integration |
 
 ## Creating an ADR
 
