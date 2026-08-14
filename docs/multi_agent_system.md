@@ -23,6 +23,9 @@ Platform-wide terms and authority rules are defined in the
 - [Standard graph adapter and runner](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agent_runner.py)
 - [Fixed three-node graph](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agents/multi_agent.py)
 - [Shared state, context, handoffs, and middleware](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agents/agent_harness.py)
+- [Retained-specialist lifecycle projection](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/specialist_lifecycle.py)
+- [Shared typed, callback, and tool service selection](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/service_selection.py)
+- [Rider-location guard and Ordelo request shared by the tool](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/rider_location_support.py)
 - [Standard triage agent and tools](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agents/triage.py)
 - [Standard delivery agent and tools](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agents/delivery.py)
 - [Standard takeaway agent and tools](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agents/takeaway.py)
@@ -110,11 +113,32 @@ existing `GraphAdapterFactory` callable.
    presentation (including its Enquiry Menu), project and payment settings, and Ordelo client. Tools
    therefore use the exact application runtime rather than module-global
    settings or clients.
-9. Standard transfer tools update `active_agent` with parent-graph
-   `Command` objects. `cleanup_before_model` and `respond_on_wa` coordinate
-   `/DoNotRespond:` turns and outbound WhatsApp responses.
-10. State persists across turns through the PostgreSQL checkpointer. Debug and
+9. Typed explicit service requests, service callbacks, and standard transfer
+   tools all use the same selection policy. It first inspects the persisted
+   lifecycle projection: a retained flow sends a deterministic completion-first
+   reply without changing service; an open flow starts a clean selected service;
+   and a closed service sends the deterministic closed response. State-inspection
+   failure preserves ownership rather than overwriting a potentially retained
+   specialist.
+10. Standard transfer tools update `active_agent` with parent-graph
+    `Command` objects. `cleanup_before_model` and `respond_on_wa` coordinate
+    `/DoNotRespond:` turns and outbound WhatsApp responses.
+11. State persists across turns through the PostgreSQL checkpointer. Debug and
     state-inspection methods reuse the same adapter boundary.
+12. External payment and fulfilment events update the lifecycle projection.
+    Payment completion stores a paid delivery awaiting rider allocation and
+    suppresses same-order replays. Terminal events notify through the retained
+    specialist, then release to triage and clear order-scoped state. A delivery
+    timeout must match the active unassigned delivery before it can notify and
+    release; it leaves the Thread active so the customer can later select a new
+    service. Completed delivery and confirmed takeaway pickup continue to the
+    existing triage termination flow.
+13. `update_customer` (shared by `delivery_agent` and `takeaway_agent`) refuses
+    to fire unless the current turn was opened by a fresh runtime
+    `SystemMessage`: a customer's own message can never trigger it, and it can
+    never fire on an earlier turn's already-consumed system instruction. This
+    is a structural guard on the tool itself, not prompt wording, so it applies
+    identically to both agents regardless of app-owned prompt phrasing.
 
 ## Standard Nodes and Ordered Tools
 
@@ -139,18 +163,20 @@ existing `GraphAdapterFactory` callable.
 6. `calculate_min_order_value`
 7. `send_restaurant_menu_tool`
 8. `verify_if_payment_complete`
-9. `send_updates_to_customer`
+9. `update_customer`
 10. `check_delivery_driver_allocation_status`
 11. `send_rider_live_location_link`
-12. `transfer_to_takeaway`
-13. `transfer_to_triage`
+12. `request_rider_location`
+13. `transfer_to_takeaway`
+14. `transfer_to_triage`
 
 ### `takeaway_agent`
 
 1. `verify_if_payment_complete`
-2. `send_takeaway_menu_tool`
-3. `transfer_to_delivery`
-4. `transfer_to_triage`
+2. `update_customer`
+3. `send_takeaway_menu_tool`
+4. `transfer_to_delivery`
+5. `transfer_to_triage`
 
 Shared-runtime contract tests own these node names, routes, and ordered tool
 lists. App tests own prompt presence and exact runtime/client composition.
@@ -377,8 +403,22 @@ description: >
 - Missing namespaced WABA values fail startup; there is no cross-app fallback.
 - Invalid or missing `active_agent` values route to `triage_agent`.
 - A final `AIMessage` without tool calls routes to `END`.
-- Transfer guards can block a handoff while retained delivery work is active.
-- A malformed persisted assistant/tool tail is trimmed and retried once; an
-  unrecoverable mismatch terminates the session.
+- `retain_thread=True` adds a current-call system message declaring the active
+  delivery or takeaway flow in motion and strictly prohibiting handoff. The
+  shared transfer guard remains the deterministic enforcement layer. When
+  retention is explicitly cleared, a current-call system message permits—but
+  never initiates—a transfer.
+- Releasing a specialist flow resets the persisted owner to triage and clears
+  order, payment, rider, reply, and delivery-calculation fields while preserving
+  Restaurant and customer-profile context. A no-rider timeout does not
+  terminate the Thread after that release. Its authoritative payment outcome is
+  retained as `is_payment_cancelled`; with `is_delivery_no_rider`, it provides
+  a fail-closed, deterministic answer to refund questions. Only a literal
+  `is_payment_cancelled=True` permits the customer-facing confirmation that a
+  refund has been issued.
+- A malformed persisted assistant/tool tail, including an orphan or mismatched
+  tool response, is trimmed from the first invalid message while retaining the
+  valid checkpoint prefix, then retried once; an unrecoverable mismatch
+  terminates the session.
 - Cross-restaurant routes return `404` before graph calls or external side
   effects.

@@ -172,6 +172,15 @@ The WhatsApp destination/source identifier used at the messaging boundary. For
 customer conversations it currently has the same value as `cust_id`, but the
 term describes a channel role rather than customer identity.
 
+### Retained Specialist Flow
+
+The AgentState projection of paid or in-progress delivery/takeaway work. When
+`retain_thread=True`, the current specialist owns the conversation and service
+handoffs are blocked. A terminal fulfilment event releases the projection to
+triage, clears order-scoped runtime fields, and permits future service
+selection. This does not change the external order or fulfilment source of
+truth.
+
 ### Restaurant Application
 
 One independently deployed FastAPI/PyWa application, such as SFCS or BNAT. It
@@ -272,8 +281,8 @@ pickup progress. It is not a separate order aggregate.
 A persisted conversation-session record scoped by Restaurant and recipient. It
 manages active/inactive lifecycle, correlation, and retention, but remains
 runtime orchestration state rather than business truth. The customer-accessible
-`/reset` command starts a new Thread lifecycle; it is not an order or payment
-simulation.
+`/reset` is an Overwatch-only operational escape hatch that starts a new Thread
+lifecycle. Regular customers cannot use it to abandon an in-progress order.
 
 ## W
 
@@ -282,6 +291,20 @@ simulation.
 The application-owned key selecting one complete WhatsApp Business Account
 configuration. Startup loads only the requested namespace and never falls back
 to another application's values.
+
+### WaLocation
+
+Ordelo's on-demand WhatsApp rider-location client integration. A customer's
+`request_rider_location` tool call posts to Ordelo's open
+`POST /wa-request-location`, which validates the exact
+`delivery_inflight(order_number, dispatch_id, rider_id)` assignment and either
+reuses a location observation no more than five minutes old or asks the rider
+for their current WhatsApp location. Ordelo posts the result to this app's
+`POST /rider-event-hooks/{rest_ref}/wa-location-response` callback, which
+resends a WhatsApp pin only after revalidating retained, picked-up,
+matching-order state. See
+`docs/wa_location_restaurant_agents_integration.md` in OrdeloAgent for the
+full contract.
 
 ### Webhook Event
 

@@ -90,6 +90,7 @@ I need to update retian_thread to false after this;
         "order_number": summary.order_number,
     }
 
+-- When rider not found, the update is not sent to the customer - why? JUmps straight to 'marketingConsent'
 -- Cache reset is available at POST /internal/cache/reset; see ADR-0016.
 -- On hitting goBack, this page errors out at https://restaurant.ordelo.app/checkout-error; This should have a way for starting new session from here.
 OR remove go back and instead, have cancel and create new order
