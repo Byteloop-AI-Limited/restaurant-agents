@@ -483,15 +483,17 @@ async def debug_state(
     config, _ = await get_config_for_recipient(
         recipient, pool, agent=runtime.identity.rest_ref
     )
+    thread_id = config["configurable"]["thread_id"]
 
     state = await graph.aget_state(config=config)
 
     if full_state:
         return {
+            "thread_id": thread_id,
             **get_state_values(state.values),
             "messages": shorten_state_messages(state.values["messages"]),
         }
-    return get_state_values(state.values)
+    return {"thread_id": thread_id, **get_state_values(state.values)}
 
 
 # %% Debug State
