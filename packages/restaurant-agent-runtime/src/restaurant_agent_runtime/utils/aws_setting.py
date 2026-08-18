@@ -99,3 +99,15 @@ def get_agent_env(secret_name: str | None = None) -> dict:
         raise RuntimeError(
             f"AWS secret '{use_secret_name}' does not contain valid JSON"
         ) from exc
+
+
+# %%
+if __name__ == "__main__":
+    env = get_agent_env()
+    from restaurant_agent_runtime.utils.aws_setting import get_agent_env
+    env = get_agent_env(secret_name="restaurant-agents-env")
+    # print(sorted(k for k in env if k.lower().startswith("sfcs_")))
+    print(json.dumps(env, indent=2, sort_keys=True))
+    from restaurant_agent_runtime.runtime import RestaurantIdentity
+    IDENTITY = RestaurantIdentity(rest_ref="ELAS", waba_namespace="elas")
+    print(IDENTITY)

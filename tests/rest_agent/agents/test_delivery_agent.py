@@ -42,6 +42,8 @@ def _runtime(*, wa_msg_id="wamid.ABC123"):
         client_ordelo=client_ordelo,
         operational_lookups=operational_lookups,
         wa_msg_id=wa_msg_id,
+        restaurant_selection=None,
+        reservation_base_url=None,
     )
     return SimpleNamespace(context=context), wa_client, operational_lookups, client_ordelo
 

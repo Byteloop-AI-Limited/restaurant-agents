@@ -1,6 +1,6 @@
 # ADR-0015: Keep Enquiry Menus App-Owned and Bounded
 
-- Status: Accepted
+- Status: Superseded by [ADR-0023](0023-sectionlist-enquiry-menus.md)
 - Date: 2026-08-03
 - Decision owners: Restaurant platform owner and maintainers
 

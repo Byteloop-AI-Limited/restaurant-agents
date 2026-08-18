@@ -29,11 +29,15 @@ decision; add a new ADR that supersedes it.
 | [0012](0012-restore-paid3100-payment-simulation.md) | Accepted | Restore the `/paid3100` payment simulation |
 | [0013](0013-runtime-rendered-prompts-and-service-order-cutoffs.md) | Accepted | Runtime-rendered prompts and service order cutoffs |
 | [0014](0014-ordelo-owned-complaint-admin-notifications.md) | Superseded | Ordelo-owned complaint admin notifications |
-| [0015](0015-app-owned-enquiry-menus.md) | Accepted | App-owned bounded enquiry menus |
+| [0015](0015-app-owned-enquiry-menus.md) | Superseded | App-owned bounded enquiry menus |
 | [0016](0016-runtime-owned-operational-lookup-cache.md) | Accepted | Runtime-owned operational lookup cache |
 | [0017](0017-ordelo-owned-feedback-admin-notifications.md) | Accepted | Ordelo-owned feedback admin notifications |
 | [0018](0018-retained-specialist-lifecycle-and-service-selection.md) | Accepted | Retained specialist lifecycle and service selection |
 | [0019](0019-walocation-customer-rider-location-client-integration.md) | Accepted | WaLocation customer rider-location client integration |
+| [0020](0020-app-owned-restaurant-selection.md) | Accepted | App-owned restaurant selection for multi-brand apps |
+| [0021](0021-optional-standard-dine-in-node.md) | Accepted | Optional standard dine-in node |
+| [0022](0022-disable-webhook-signature-validation.md) | Accepted | Disable webhook signature validation |
+| [0023](0023-sectionlist-enquiry-menus.md) | Accepted | WhatsApp SectionList enquiry menus with an app-owned extra option |
 
 ## Creating an ADR
 

@@ -1,5 +1,18 @@
 # Incorrect WABA Config (No Response) Issue
 
+> **Update 2026-08-17 (ADR-0022):** `validate_updates` is now `False` for
+> every app, superseding this document's "the monorepo intentionally keeps
+> validation enabled" conclusion below. **The specific symptom this document
+> describes — messages silently dropped due to mismatched `app_id`/
+> `app_secret` — can no longer happen**, because the signature check that
+> caused the drop is off. That does not mean the underlying credential
+> mismatch is fixed or safe to ignore: `app_id` is still required
+> independently for `override_waba_callback_url` and media-template
+> creation, and a wrong `app_secret` is a security-relevant fact about the
+> namespace even when it no longer blocks message delivery. Use this
+> document's diagnostic steps to find a credential mismatch; do not use its
+> "re-enable validation" framing as the fix — read ADR-0022 first.
+
 ## Summary
 
 A WhatsApp callback can register successfully while incoming messages are never
@@ -107,9 +120,10 @@ registration succeeds.
    are loaded during import, so an already running process retains the old
    values.
 5. Confirm `/details` reports the expected namespace, WABA ID, phone ID, app ID,
-   masked credential hints, `validate_updates: true`, display number, effective
-   and configured callbacks, admins, and service hours. Check `details_errors`
-   before trusting unavailable enrichment fields.
+   masked credential hints, display number, effective and configured
+   callbacks, admins, and service hours. `validate_updates` reports `false`
+   for every app since ADR-0022 — that is expected, not a signal to chase.
+   Check `details_errors` before trusting unavailable enrichment fields.
 6. Run the callback preflight checks before executing any callback update.
 7. Send one approved test message and verify that a message handler runs and a
    fresh reply is produced.
@@ -122,11 +136,15 @@ registration succeeds.
 | Callback update succeeds | The WABA token can register its app |
 | Phone/WABA lookup succeeds | The token can access that phone and WABA |
 | Message webhook returns `200` | Meta's request was acknowledged, not necessarily processed |
-| Older application processes messages | It may have `validate_updates=False` and may be hiding the mismatch |
+| Messages process correctly | Signature validation is off repo-wide (ADR-0022) and no longer proves the credentials match |
 
-The older standalone SFCS application used `validate_updates=False`. That made
-messages appear to work despite mismatched app credentials because it skipped
-signature validation. The monorepo intentionally keeps validation enabled.
+The older standalone SFCS application used `validate_updates=False`, which is
+why mismatched app credentials went unnoticed there. As of ADR-0022, this
+monorepo uses the same setting for the same reason (local/ngrok testing
+friction) — the failure mode this document describes cannot reproduce here
+anymore, but that also means "messages are working" is no longer evidence
+the credentials are correct. Use the diagnostic steps above on their own
+merits, not as a proxy for "the app secret matches."
 
 ## Relevant code
 
@@ -134,7 +152,7 @@ signature validation. The monorepo intentionally keeps validation enabled.
   loads one exact WABA namespace without fallback.
 - [`WabaBusinessSettings.create_async_client`](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/config/waba_setting.py)
   passes the selected token and app secret to PyWa with
-  `validate_updates=True`.
+  `validate_updates=WABA_VALIDATE_UPDATES` (`False` since ADR-0022).
 - [`waba_callback.py`](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/waba_callback.py)
   contains the fail-before-write token/app, WABA/phone, runtime identity, and
   post-update callback checks.

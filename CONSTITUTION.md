@@ -1,10 +1,18 @@
-# SFCS and BNAT UV Workspace Monorepo
+# SFCS, BNAT, and ELAS UV Workspace Monorepo
 
 - Status: Approved
 - Date: 2026-07-25
 - Amendment: Shared Agent runtime approved and implemented 2026-07-29
+- Amendment: ELAS onboarded 2026-08-17 — first multi-restaurant app (Elai and
+  Wings and Things behind one WhatsApp number) and first app to use the
+  optional standard dine-in node. See ADR-0020 and ADR-0021.
+- Amendment: webhook signature validation disabled for all apps 2026-08-17
+  (`WABA_VALIDATE_UPDATES = False`), superseding this document's earlier
+  `validate_updates=True` requirement. See ADR-0022.
 - SFCS source: `feature/fly-move@ce46201ddf68ce082278ca94b4f5ffdf3ba35b7c`
 - BNAT source: `main@db3d4be6b3417338ae12a99a18f1194914482563`
+- ELAS source: design evidence only, `~/bloop/elai` (excluded from migration,
+  per the original Summary below); no code was imported verbatim.
 
 ## Summary
 
@@ -19,10 +27,11 @@ restaurant-agents/
 │   └── restaurant-agent-runtime/
 └── apps/
     ├── sfcs/
-    └── bnat/
+    ├── bnat/
+    └── elas/
 ```
 
-SFCS and BNAT remain completely separate Fly applications, images, processes, WhatsApp clients, webhook registrations, and deployments. Only reusable source code is centralized.
+SFCS, BNAT, and ELAS remain completely separate Fly applications, images, processes, WhatsApp clients, webhook registrations, and deployments. Only reusable source code is centralized. ELAS additionally serves two restaurant brands (Elai and Wings and Things) behind one WhatsApp number and one `RestaurantIdentity`; see ADR-0020.
 
 Use SFCS's Python and dependency versions as the workspace baseline. Elai is excluded.
 
@@ -58,6 +67,12 @@ Create workspace members `sfcs-agent` and `bnat-agent`. Each owns:
 - Fly manifest, deployment reference, and app-specific tests.
 - SFCS uses `rest_ref="SFCS"` and `waba_namespace="sfcs"`.
 - BNAT uses `rest_ref="BNAT"` and `waba_namespace="bnat"`.
+- ELAS uses `rest_ref="ELAS"` and `waba_namespace="elas"`, and additionally
+  owns a `RestaurantSelection` config (Elai and Wings and Things) and the
+  `dinein` prompt that activates the optional standard dine-in node — see
+  ADR-0020 and ADR-0021. Every other constitutional invariant below
+  (isolated runtime and WhatsApp client, restaurant-prefixed route matching,
+  one worker per app) applies to ELAS exactly as it does to SFCS and BNAT.
 
 No app may import the other app package.
 
@@ -109,7 +124,10 @@ The app factory must:
 1. Load the requested namespace without fallback.
 2. Fail startup when any namespaced WABA setting is missing.
 3. Construct one server-bound WhatsApp client using that namespace's phone ID, verify token, token, and app secret.
-4. Enable `validate_updates=True`.
+4. Construct the client with `validate_updates=False` (`WABA_VALIDATE_UPDATES`,
+   `config/waba_setting.py`). Webhook signature validation is intentionally
+   disabled for every app — see ADR-0022, which supersedes this section's
+   earlier `validate_updates=True` requirement.
 5. Construct the restaurant graph adapter with the same client object.
 6. Construct the operational lookup cache from the exact runtime database client, then inject the runtime and adapter into every handler, router, graph context, and WA-sending service.
 
@@ -161,12 +179,13 @@ Each Fly manifest remains app-owned:
 
 - SFCS: `app="sfcs-agent"`, `APP_MODULE="sfcs_agent.main:app"`.
 - BNAT: `app="bnat-agent"`, `APP_MODULE="bnat_agent.main:app"`.
+- ELAS: `app="elas-agent"`, `APP_MODULE="elas_agent.main:app"`.
 
-For a shared Agent runtime release, build both app artifacts from the same
+For a shared Agent runtime release, build all app artifacts from the same
 repository commit and root lockfile and release them in one coordinated window.
-If either app's health check or authorized canary fails, roll both back to the
-previous known-good shared commit. Do not leave production on mixed runtime
-revisions.
+If any app's health check or authorized canary fails, roll all of them back to
+the previous known-good shared commit. Do not leave production on mixed
+runtime revisions.
 
 Manual deployments remain independent:
 
@@ -186,7 +205,18 @@ fly deploy . \
   --ha=false
 ```
 
-Retain separate `SFCS_APP_URL` and `BNAT_APP_URL` Ordelo configuration values. No Fly or GitHub resources are created during the local implementation.
+```bash
+fly deploy . \
+  --config apps/elas/fly.toml \
+  --dockerfile Dockerfile \
+  --build-arg APP_PACKAGE=elas-agent \
+  --ha=false
+```
+
+Retain separate `SFCS_APP_URL`, `BNAT_APP_URL`, and `ELAS_APP_URL` Ordelo
+configuration values. `ELAS_APP_URL` is the cutover switch from the legacy
+`elai` deployment to this app — see ADR-0020 and `apps/elas/DEPLOYMENT.md`.
+No Fly or GitHub resources are created during the local implementation.
 
 ## Verification and Transition
 

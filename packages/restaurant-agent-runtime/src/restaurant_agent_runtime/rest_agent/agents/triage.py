@@ -30,15 +30,23 @@ from restaurant_agent_runtime.rest_agent.agents.agent_harness import (
     cleanup_before_model,
     respond_on_wa,
     transfer_to_delivery,
+    transfer_to_dinein,
     transfer_to_takeaway,
 )
 from restaurant_agent_runtime.rest_agent.agent_wa_senders import (
     select_marketing_consent_wa_send,
     select_enquiry_wa_send,
+    select_restaurant_wa_send,
     select_service_wa_send,
     send_welcome_msg_wa,
 )
 from restaurant_agent_runtime.rest_agent.prompt_runtime import render_prompt_middleware
+from restaurant_agent_runtime.rest_agent.restaurant_selection import (
+    resolve_delivery_button_label,
+    resolve_takeaway_button_label,
+    selection_pending,
+)
+from restaurant_agent_runtime.rest_agent.service_selection import retained_handoff_block
 from restaurant_agent_runtime.services.ordelo_service.datamodels.customer_master_pymodel import (
     RestaurantFeedbackRequest,
 )
@@ -72,13 +80,41 @@ async def send_welcome_message(
         restaurant_name=ctx.restaurant_name,
     )
 
+    if ctx.restaurant_selection is not None and selection_pending(
+        state, ctx.restaurant_selection
+    ):
+        await select_restaurant_wa_send(
+            recipient=recipient,
+            wa_client=ctx.wa_client,
+            selection=ctx.restaurant_selection,
+        )
+        return Command(
+            goto=END,
+            update={
+                "rest_ref": rest_ref,
+                "active_agent": "triage_agent",
+                "messages": [
+                    ToolMessage(
+                        "Restaurant selection buttons sent.",
+                        tool_call_id=tool_call_id,
+                    ),
+                    AIMessage("/DoNotRespond: Please select a restaurant."),
+                ],
+            },
+        )
+
     await select_service_wa_send(
         recipient=recipient,
         wa_client=ctx.wa_client,
         rest_ref=rest_ref,
         operational_lookups=ctx.operational_lookups,
-        delivery_button_label=ctx.delivery_button_label,
-        takeaway_button_label=ctx.takeaway_button_label,
+        delivery_button_label=resolve_delivery_button_label(
+            state, ctx.restaurant_selection, ctx.delivery_button_label
+        ),
+        takeaway_button_label=resolve_takeaway_button_label(
+            state, ctx.restaurant_selection, ctx.takeaway_button_label
+        ),
+        enquiry_button_label=ctx.enquiry_button_label,
     )
 
     return Command(
@@ -135,8 +171,13 @@ async def _send_service_selection(
         wa_client=ctx.wa_client,
         rest_ref=(state.get("rest_ref") or ctx.rest_ref).lower(),
         operational_lookups=ctx.operational_lookups,
-        delivery_button_label=ctx.delivery_button_label,
-        takeaway_button_label=ctx.takeaway_button_label,
+        delivery_button_label=resolve_delivery_button_label(
+            state, ctx.restaurant_selection, ctx.delivery_button_label
+        ),
+        takeaway_button_label=resolve_takeaway_button_label(
+            state, ctx.restaurant_selection, ctx.takeaway_button_label
+        ),
+        enquiry_button_label=ctx.enquiry_button_label,
     )
 
 
@@ -199,6 +240,101 @@ async def ask_user_to_select_enquiry(
             ]
         },
     )
+
+# %% Restaurant-selection tools (only bound when the app configures RestaurantSelection)
+@tool
+async def ask_user_to_select_restaurant(
+    state: Annotated[dict, InjectedState],
+    tool_call_id: Annotated[str, InjectedToolCallId],
+    runtime: ToolRuntime[ContextSchema],
+):
+    """
+    Send interactive WhatsApp buttons asking which restaurant the customer means.
+
+    Call this before any other triage action whenever this app serves more
+    than one restaurant brand and no restaurant has been selected yet.
+    """
+    ctx = runtime.context
+    if ctx.restaurant_selection is None:
+        return "This app does not require restaurant selection."
+
+    if (guard := retained_handoff_block(state, tool_call_id)) is not None:
+        return guard
+
+    await select_restaurant_wa_send(
+        recipient=ctx.recipient,
+        wa_client=ctx.wa_client,
+        selection=ctx.restaurant_selection,
+    )
+    return Command(
+        goto=END,
+        update={
+            "messages": [
+                ToolMessage(
+                    "Restaurant selection buttons sent.", tool_call_id=tool_call_id
+                ),
+                AIMessage("/DoNotRespond: Please select a restaurant."),
+            ],
+        },
+    )
+
+
+@tool
+async def capture_restaurant_selected(
+    rest_ref: str,
+    state: Annotated[dict, InjectedState],
+    tool_call_id: Annotated[str, InjectedToolCallId],
+    runtime: ToolRuntime[ContextSchema],
+):
+    """
+    Capture a restaurant selection typed as plain text (e.g. "elai", "wings").
+
+    Call this only when the customer's message unambiguously names one of the
+    configured restaurant choices, passing that choice's exact rest_ref.
+    """
+    ctx = runtime.context
+    selection = ctx.restaurant_selection
+    if selection is None:
+        return "This app does not require restaurant selection."
+
+    choice = selection.choice_for(rest_ref)
+    if choice is None:
+        return (
+            f"Unknown restaurant choice: {rest_ref!r}. "
+            "Call `ask_user_to_select_restaurant` instead."
+        )
+
+    if (guard := retained_handoff_block(state, tool_call_id)) is not None:
+        return guard
+
+    # `state` predates this turn's write, so it cannot carry `choice` yet —
+    # resolve directly from the just-captured choice instead of via state.
+    await select_service_wa_send(
+        recipient=ctx.recipient,
+        wa_client=ctx.wa_client,
+        rest_ref=(state.get("rest_ref") or ctx.rest_ref).lower(),
+        operational_lookups=ctx.operational_lookups,
+        delivery_button_label=choice.delivery_button_label or ctx.delivery_button_label,
+        takeaway_button_label=choice.takeaway_button_label or ctx.takeaway_button_label,
+        enquiry_button_label=ctx.enquiry_button_label,
+    )
+    return Command(
+        goto=END,
+        update={
+            "selected_rest_ref": choice.rest_ref,
+            "messages": [
+                ToolMessage(
+                    f"Restaurant captured from plain text ({choice.rest_ref}). "
+                    "Service selection buttons sent.",
+                    tool_call_id=tool_call_id,
+                ),
+                AIMessage(
+                    "/DoNotRespond: Please select how I can help you today."
+                ),
+            ],
+        },
+    )
+
 
 # %% Tool 3: capture_marketing_consent
 @tool
@@ -424,10 +560,23 @@ triage_tools = [
     transfer_to_takeaway,
 ]
 
-def build_triage_agent(*, model, system_prompt: str, extra_tools=()):
+def build_triage_agent(
+    *,
+    model,
+    system_prompt: str,
+    extra_tools=(),
+    restaurant_selection=None,
+    dinein_enabled: bool = False,
+):
+    selection_tools = (
+        (ask_user_to_select_restaurant, capture_restaurant_selected)
+        if restaurant_selection is not None
+        else ()
+    )
+    dinein_tools = (transfer_to_dinein,) if dinein_enabled else ()
     return create_agent(
         model=model,
-        tools=[*triage_tools, *extra_tools],
+        tools=[*triage_tools, *selection_tools, *dinein_tools, *extra_tools],
         system_prompt=system_prompt,
         middleware=[
             render_prompt_middleware(system_prompt),

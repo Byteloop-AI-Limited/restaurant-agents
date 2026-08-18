@@ -1,9 +1,9 @@
 """
 Unit tests for restaurant_agent_runtime.rest_agent.agent_wa_senders.select_service_wa_send
     . Verifies the availability-filtered service menu: a recipient blocked by
-      OperationalLookupCache.accepts_new_order sees only Enquiry, while an
-      Overwatch recipient (bypassed inside the cache) sees every button even
-      when the venue is closed
+      OperationalLookupCache.accepts_new_order sees only the enquiry button,
+      while an Overwatch recipient (bypassed inside the cache) sees every
+      button even when the venue is closed
     . Verifies operational_lookups is a required argument, so a forgotten
       argument raises immediately instead of silently rendering every button
   Functions/Classes:
@@ -12,8 +12,9 @@ Unit tests for restaurant_agent_runtime.rest_agent.agent_wa_senders.select_servi
     . decode_button
     . test_select_service_wa_send_hides_closed_services_for_normal_recipient
     . test_select_service_wa_send_shows_all_buttons_for_overwatch_recipient_when_closed
+    . test_select_service_wa_send_uses_app_owned_enquiry_button_label
     . test_select_service_wa_send_shows_all_buttons_when_open
-    . test_select_service_wa_send_uses_app_owned_button_labels
+    . test_select_service_wa_send_shows_only_the_open_service
     . test_select_service_wa_send_requires_operational_lookups
 """
 
@@ -62,7 +63,7 @@ async def test_select_service_wa_send_hides_closed_services_for_normal_recipient
 
     message = wa.sent_messages[0]
     assert message["text"] == "How can I help you today?"
-    assert [button.title for button in message["buttons"]] == ["Enquiry"]
+    assert [button.title for button in message["buttons"]] == ["More options"]
     assert ops.calls == [("delivery", "447000000001"), ("takeaway", "447000000001")]
 
 
@@ -87,13 +88,33 @@ async def test_select_service_wa_send_shows_all_buttons_for_overwatch_recipient_
     assert [button.title for button in message["buttons"]] == [
         "Delivery (15% off)",
         "Takeaway (10% off)",
-        "Enquiry",
+        "More options",
     ]
     payloads = [decode_button(button) for button in message["buttons"]]
     assert [payload["active_agent"] for payload in payloads] == [
         "delivery_agent",
         "takeaway_agent",
         "triage_agent",
+    ]
+
+
+async def test_select_service_wa_send_uses_app_owned_enquiry_button_label():
+    wa = FakeWaClient()
+    ops = FakeOperationalLookups(delivery_open=True, takeaway_open=True)
+
+    await select_service_wa_send(
+        "447000000001",
+        wa,
+        "bnat",
+        operational_lookups=ops,
+        enquiry_button_label="Something Else",
+    )
+
+    message = wa.sent_messages[0]
+    assert [button.title for button in message["buttons"]] == [
+        "Delivery",
+        "Takeaway",
+        "Something Else",
     ]
 
 
@@ -109,7 +130,7 @@ async def test_select_service_wa_send_shows_all_buttons_when_open():
     assert [button.title for button in message["buttons"]] == [
         "Delivery",
         "Takeaway",
-        "Enquiry",
+        "More options",
     ]
 
 
@@ -122,7 +143,7 @@ async def test_select_service_wa_send_shows_only_the_open_service():
     )
 
     message = wa.sent_messages[0]
-    assert [button.title for button in message["buttons"]] == ["Delivery", "Enquiry"]
+    assert [button.title for button in message["buttons"]] == ["Delivery", "More options"]
 
 
 def test_select_service_wa_send_requires_operational_lookups():

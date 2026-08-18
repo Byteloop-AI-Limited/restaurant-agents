@@ -32,6 +32,8 @@ async def test_send_restaurant_menu_uses_text_cta_when_logo_is_not_configured(
         wa_client=wa_client,
         logo_url=None,
         operational_lookups=operational_lookups,
+        delivery_promo_caption="20% off delivery",
+        takeaway_promo_caption="Get started with your collection order",
     )
 
     wa_client.send_image.assert_not_awaited()

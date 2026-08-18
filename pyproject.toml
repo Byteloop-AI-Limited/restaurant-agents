@@ -3,6 +3,7 @@ members = [
     "packages/restaurant-agent-runtime",
     "apps/sfcs",
     "apps/bnat",
+    "apps/elas",
 ]
 
 [tool.uv.sources]
@@ -25,10 +26,11 @@ ignore = ["F704"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["tests", "apps/sfcs/tests", "apps/bnat/tests"]
+testpaths = ["tests", "apps/sfcs/tests", "apps/bnat/tests", "apps/elas/tests"]
 norecursedirs = ["tests/legacy_contract"]
 pythonpath = [
     "packages/restaurant-agent-runtime/src",
     "apps/sfcs/src",
     "apps/bnat/src",
+    "apps/elas/src",
 ]

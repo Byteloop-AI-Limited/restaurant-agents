@@ -30,6 +30,7 @@ from restaurant_agent_runtime.rest_agent.agents.agent_harness import (
     respond_on_wa,
     send_takeaway_menu_tool,
     transfer_to_delivery,
+    transfer_to_dinein,
     transfer_to_triage,
     update_customer,
 )
@@ -78,10 +79,13 @@ takeaway_tools = [
 ]
 
 # %%
-def build_takeaway_agent(*, model, system_prompt: str, extra_tools=()):
+def build_takeaway_agent(
+    *, model, system_prompt: str, extra_tools=(), dinein_enabled: bool = False
+):
+    dinein_tools = (transfer_to_dinein,) if dinein_enabled else ()
     return create_agent(
         model=model,
-        tools=[*takeaway_tools, *extra_tools],
+        tools=[*takeaway_tools, *dinein_tools, *extra_tools],
         system_prompt=system_prompt,
         middleware=[
             render_prompt_middleware(system_prompt),

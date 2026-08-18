@@ -9,3 +9,4 @@ def test_sfcs_identity_is_app_owned():
         "Share feedback",
         "Subscribe for offers",
     ]
+    assert PRESENTATION.enquiry_button_label == "More options"

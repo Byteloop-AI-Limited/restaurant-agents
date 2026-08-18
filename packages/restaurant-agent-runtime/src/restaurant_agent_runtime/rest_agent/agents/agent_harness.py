@@ -56,7 +56,7 @@ from restaurant_agent_runtime.services.ordelo_service.datamodels.restaurant_mast
 from restaurant_agent_runtime.services.operational_lookup_cache import (
     OperationalLookupCache,
 )
-from restaurant_agent_runtime.runtime import EnquiryMenu
+from restaurant_agent_runtime.runtime import EnquiryMenu, RestaurantSelection
 from restaurant_agent_runtime.rest_agent.new_order_entry import (
     normalize_min_order_value,
     send_new_order_menu,
@@ -65,6 +65,16 @@ from restaurant_agent_runtime.rest_agent.service_selection import (
     retained_handoff_block,
     route_tool_service_selection,
 )
+from restaurant_agent_runtime.rest_agent.restaurant_selection import (
+    dinein_available,
+    dinein_unsupported_block,
+    resolve_delivery_promo_caption,
+    resolve_menu_logo_url,
+    resolve_menu_rest_ref,
+    resolve_takeaway_promo_caption,
+    selection_pending,
+    selection_required_block,
+)
 
 
 # %% Define AgentState
@@ -72,6 +82,13 @@ class AgentState(TypedDict):
     """Shared state schema for all agents.
 
     Attributes:
+        rest_ref: Invariant configured app identity. Always seeded on a new
+            thread; never the customer's choice among multiple restaurant
+            brands. See `selected_rest_ref`.
+        selected_rest_ref: The customer's chosen restaurant brand, set only by
+            apps that configure `RestaurantPresentation.restaurant_selection`
+            (see restaurant_selection.py). Absent or `None` means the choice
+            has not been made yet. Never fall back to `rest_ref` here.
         active_agent: Currently active agent name for multi-agent routing
         messages: Conversation history with add_messages reducer
         wa_name: Customer's WhatsApp display name
@@ -92,6 +109,7 @@ class AgentState(TypedDict):
     """
 
     rest_ref: str
+    selected_rest_ref: NotRequired[str | None]
     active_agent: NotRequired[str]
     messages: Annotated[Sequence[BaseMessage], add_messages]
     wa_name: str
@@ -139,6 +157,9 @@ class ContextSchema(BaseModel):
     restaurant_contact_phone: str | None = None
     delivery_button_label: str = "Delivery"
     takeaway_button_label: str = "Takeaway"
+    enquiry_button_label: str = "More options"
+    delivery_promo_caption: str
+    takeaway_promo_caption: str
     enquiry_menu: EnquiryMenu
     restaurant_master: RestaurantMaster
     project_settings: Any
@@ -147,6 +168,8 @@ class ContextSchema(BaseModel):
     operational_lookups: OperationalLookupCache
     thread_handler: Any | None = None
     wa_msg_id: str | None = None
+    restaurant_selection: RestaurantSelection | None = None
+    reservation_base_url: str | None = None
 
     def model_post_init(self, __context: Any) -> None:
         if self.thread_handler is None:
@@ -172,12 +195,20 @@ async def _send_menu_tool(
     result = await send_new_order_menu(
         recipient=ctx.recipient,
         state=state,
-        rest_ref=state.get("rest_ref") or ctx.rest_ref,
+        rest_ref=resolve_menu_rest_ref(state, ctx.restaurant_selection, ctx.rest_ref),
         wa_client=ctx.wa_client,
-        logo_url=ctx.restaurant_logo_url,
+        logo_url=resolve_menu_logo_url(
+            state, ctx.restaurant_selection, ctx.restaurant_logo_url
+        ),
         operational_lookups=ctx.operational_lookups,
         thread_handler=ctx.thread_handler,
         order_type=order_type,
+        delivery_promo_caption=resolve_delivery_promo_caption(
+            state, ctx.restaurant_selection, ctx.delivery_promo_caption
+        ),
+        takeaway_promo_caption=resolve_takeaway_promo_caption(
+            state, ctx.restaurant_selection, ctx.takeaway_promo_caption
+        ),
         reply_to_message_id=state.get("reply_to_msg_id"),
     )
     if result == "closed":
@@ -427,6 +458,60 @@ def transfer_to_triage(
         goto="triage_agent",
         update={
             "active_agent": "triage_agent",
+            "messages": update_messages,
+        },
+    )
+
+
+# %%
+async def transfer_to_dinein(
+    runtime: ToolRuntime[ContextSchema],
+) -> Command:
+    """Transfer the conversation to the dine-in agent.
+
+    Use this tool when the customer wants to book a table or make a dine-in
+    reservation. Only available when this app configures a dine-in prompt.
+    """
+    state = runtime.state
+    tool_call_id = runtime.tool_call_id
+    ctx = runtime.context
+
+    if selection_pending(state, ctx.restaurant_selection):
+        return selection_required_block(tool_call_id)
+
+    if not dinein_available(state, ctx.restaurant_selection, ctx.reservation_base_url):
+        return dinein_unsupported_block(tool_call_id)
+
+    if (
+        guard := _transfer_check_retained_specialist_work(state, tool_call_id)
+    ) is not None:
+        return guard
+
+    last_ai_message = next(
+        (
+            msg
+            for msg in reversed(state["messages"])
+            if isinstance(msg, AIMessage)
+        ),
+        None,
+    )
+
+    transfer_message = ToolMessage(
+        content="Transferred to dine-in agent for table reservation.",
+        tool_call_id=tool_call_id,
+    )
+
+    update_messages = [transfer_message]
+    if last_ai_message:
+        update_messages.insert(0, last_ai_message)
+
+    logger.info(f"Transferring to dine-in agent for recipient: {ctx.recipient}")
+
+    return Command(
+        graph=Command.PARENT,
+        goto="dinein_agent",
+        update={
+            "active_agent": "dinein_agent",
             "messages": update_messages,
         },
     )

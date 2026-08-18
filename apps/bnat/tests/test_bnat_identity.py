@@ -16,3 +16,4 @@ def test_bnat_identity_is_app_owned():
         "Parking availability",
         "Subscribe for offers",
     ]
+    assert PRESENTATION.enquiry_button_label == "More options"

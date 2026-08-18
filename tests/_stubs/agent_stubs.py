@@ -52,6 +52,8 @@ def build_runtime(**context_overrides):
         thread_handler=FakeThreadHandler(),
         pool=object(),
         client_ordelo=None,
+        restaurant_selection=None,
+        reservation_base_url=None,
     )
     for key, value in context_overrides.items():
         setattr(context, key, value)
@@ -98,6 +100,10 @@ def build_agent_harness_stub():
         """Transfer to triage agent in tests."""
         return _transfer_command("triage_agent")
 
+    def transfer_to_dinein(*args, **kwargs):
+        """Transfer to dine-in agent in tests."""
+        return _transfer_command("dinein_agent")
+
     def update_customer(*args, **kwargs):
         """Send a specialist customer update in tests."""
         return "customer updated"
@@ -107,6 +113,7 @@ def build_agent_harness_stub():
     module.transfer_to_delivery = transfer_to_delivery
     module.transfer_to_takeaway = transfer_to_takeaway
     module.transfer_to_triage = transfer_to_triage
+    module.transfer_to_dinein = transfer_to_dinein
     module.update_customer = update_customer
     return module
 

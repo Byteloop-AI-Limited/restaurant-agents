@@ -69,6 +69,14 @@ An incoming fulfilment contract payload describing a delivery workflow update.
 It reports external fulfilment state and is not an order aggregate or source of
 truth.
 
+### Dine-in Agent
+
+The optional standard `dinein_agent` Named Agent, constructed only when an
+app supplies `RestaurantPrompts.dinein` (ADR-0021). It owns table
+reservation and reservation-status tools and the same transfer contract as
+every other standard agent; an app that does not configure it never
+constructs or reaches this node.
+
 ## E
 
 ### External Bounded Context
@@ -80,16 +88,22 @@ payment services, and address/geocoding providers.
 
 ### Enquiry Menu
 
-An app-owned, bounded WhatsApp button menu for non-order triage. It contains
-one prompt and one to three `EnquiryOption` values; it passes through
-`RestaurantPresentation` so callback and triage-tool paths show the same
-restaurant-specific choices.
+An app-owned, bounded WhatsApp SectionList for non-order triage (ADR-0023).
+It contains one prompt, a `button_title` (the SectionList opener), and one
+to ten `EnquiryOption` values; it passes through `RestaurantPresentation` so
+callback and triage-tool paths show the same restaurant-specific choices.
+Opened from the third static service button
+(`RestaurantPresentation.enquiry_button_label`, default "More options").
 
 ### Enquiry Option
 
-One visible Enquiry Menu label plus the canonical customer intent placed in its
-`/SelectEnquiry` callback. It is customer-facing composition data, not a graph
-node, callback registry, or persisted state.
+One visible Enquiry Menu list row (title, canonical customer intent, and an
+optional description) placed in its `/SelectEnquiry` callback. It is
+customer-facing composition data, not a graph node, callback registry, or
+persisted state. An option whose fulfilment requires a different standard
+node (for example a dine-in booking option) still activates
+`triage_agent`, exactly like every other option — the LLM transfers from
+there via the node's own guarded tool.
 
 ## F
 
@@ -183,9 +197,24 @@ truth.
 
 ### Restaurant Application
 
-One independently deployed FastAPI/PyWa application, such as SFCS or BNAT. It
-owns identity, presentation, prompts, entrypoint, Fly manifest, and genuinely
-custom behavior. Applications do not import each other.
+One independently deployed FastAPI/PyWa application, such as SFCS, BNAT, or
+ELAS. It owns identity, presentation, prompts, entrypoint, Fly manifest, and
+genuinely custom behavior. Applications do not import each other. Most
+Restaurant Applications serve exactly one restaurant; ELAS is the first that
+serves more than one behind a single `RestaurantIdentity` — see Restaurant
+Selection.
+
+### RestaurantChoice
+
+One selectable restaurant brand within a `RestaurantSelection`: a `rest_ref`,
+button title, customer-facing display name, canonical intent text, optional
+logo URL, whether it offers dine-in, and optional per-brand overrides for
+the delivery/takeaway promo caption and service-selection button labels
+(each falling back to `RestaurantPresentation`'s value when unset). It is
+app-owned composition data, not persisted state. Every WhatsApp button-title
+field on `RestaurantChoice`/`RestaurantPresentation` is capped at 20
+characters; `EnquiryOption.title` (a SectionList row, not a button) is
+capped at 24. Both are validated at construction time.
 
 ### RestaurantIdentity
 
@@ -209,7 +238,9 @@ deliberately separate from RestaurantMaster's mutable operational data.
 ### RestaurantPrompts
 
 An immutable record containing one application's complete triage, delivery, and
-takeaway prompts. Prompts are application-owned inputs to the shared runtime.
+takeaway prompts, plus an optional dine-in prompt that activates the optional
+standard Dine-in Agent (ADR-0021). Prompts are application-owned inputs to
+the shared runtime.
 
 ### RestaurantRuntime
 
@@ -217,6 +248,14 @@ The immutable environment record assembled for exactly one Restaurant
 Application. It contains identity, presentation, settings, and the exact async
 and sync WhatsApp clients plus its Operational Lookup Cache. The record is
 frozen, but referenced clients and services are effectful and mutable.
+
+### Restaurant Selection
+
+An app-owned `RestaurantSelection` config (prompt plus two or three
+`RestaurantChoice` values) that gates ordering behind an explicit
+"which restaurant?" step for an app serving more than one restaurant brand
+(ADR-0020). Its absence (the default) leaves every selection-aware code path
+inert. See Selected Restaurant for the corresponding runtime state.
 
 ### RestaurantSettingsBundle
 
@@ -226,6 +265,16 @@ services receive bundle members through RestaurantRuntime, ContextSchema, or
 explicit parameters.
 
 ## S
+
+### Selected Restaurant
+
+The customer's chosen restaurant brand, held in `AgentState["selected_rest_ref"]`
+and set by exactly one writer: the `/SelectRestaurant` callback and the
+`capture_restaurant_selected` triage tool (ADR-0020). Distinct from
+`rest_ref` (the invariant, always-seeded application identity) — code must
+never treat `rest_ref` as evidence that a restaurant has been selected.
+Selection is preserved across a completed order and cleared only by a fresh
+thread.
 
 ### Service Hours
 

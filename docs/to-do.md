@@ -79,6 +79,83 @@ are complete. The following work is intentionally deferred.
   by ADR-0016; a multi-instance reset requires one request per replica.
 - [x] Delete the inconsistent, unused PGVector example/retriever code.
 
+## Discovered during ELAS onboarding (2026-08-17)
+
+- [x] `prompt_runtime.py`'s `render` resolved `selected_restaurant_name` to
+  `context.restaurant_name` whenever no choice had been captured yet. For a
+  single-restaurant app that is the app's own name (correct), but for ELAS
+  before the customer picks a brand it rendered as `restaurant_name` =
+  `PRESENTATION.display_name` = "Elai" — a real brand name — directly
+  contradicting the same prompt's "restaurant not yet known" rule. Fixed by
+  resolving to the literal `"not yet selected"` whenever
+  `context.restaurant_selection is not None` and no choice has been captured;
+  single-restaurant apps are unaffected. See
+  `tests/rest_agent/test_prompt_runtime.py`.
+- [ ] `rest_agent/agents/triage.py`'s `send_welcome_message` has a second,
+  unreachable `return Command(...)` block (the "Welcome message sent to
+  {wa_name}..." variant) immediately after the first, live `return
+  Command(...)` ("Service selection buttons sent..."). This predates the
+  ELAS restaurant-selection branch added above it and is dead code on
+  SFCS/BNAT/ELAS alike. Low risk, but delete it in a follow-up pass rather
+  than as a drive-by edit during unrelated work.
+- [x] elai's carousel menu template used the slug `wits` for the "Wings and
+  Things" brand; its live non-carousel path (the one actually invoked) used
+  `chks`. Resolved 2026-08-17 by tracing `_send_menu_tool` → `state["rest_ref"]`
+  → set to `"chks"` by `/SelectRestRef` — `wits` only appeared in a
+  commented-out, never-invoked carousel experiment. ELAS's `RestaurantChoice`
+  for CHKS now uses the confirmed-correct `chks_logo.jpg`; this was also the
+  root cause of a real production `MediaUploadError` (403) — the original
+  `identity.py` logo URLs were a fabricated S3 path that never existed, not
+  even the wits/chks slug. Still open: confirming the menu *web app itself*
+  serves `/restaurant/chks` (see `apps/elas/DEPLOYMENT.md`).
+- [ ] The AST-based graph-contract test
+  (`tests/rest_agent/test_graph_contract.py`) that pinned `multi_agent.py` by
+  parsing source text for exactly 3 `add_node`/4 `add_conditional_edges`
+  calls could not survive `build_multi_agent_graph` gaining an optional
+  config-gated 4th node (ADR-0021): a loop-based node/edge builder is
+  correct and necessary to avoid duplicating the function per node count,
+  but it makes any additional `add_node` call in source — even one only
+  reached conditionally at runtime — permanently unparseable by an
+  unconditional AST walk. Replaced that one test with a stronger
+  characterization that builds the real `StateGraph` twice (with and
+  without `dinein_agent_node`) and inspects `builder.nodes.keys()` plus
+  `route_initial`/`route_after_agent` directly. If another shared graph
+  file grows a similar structural AST-pinned test, expect the same failure
+  mode the next time a config-gated node is added.
+- [x] BNAT's service-selection buttons said "Delivery (15% off)" /
+  "Takeaway (10% off)" (`apps/bnat/src/bnat_agent/identity.py`), but its
+  menu-image caption had never been given its own `delivery_promo_caption` /
+  `takeaway_promo_caption` (added 2026-08-17), so it fell through to
+  `DEFAULT_DELIVERY_PROMO_CAPTION` = "...20% off..." — a live mismatch
+  between the button (15%) and the caption sent moments later (20%).
+  Resolved 2026-08-17: set BNAT's captions to match its existing buttons
+  (15% delivery / 10% takeaway), confirmed by the owner.
+- [ ] `on_callback_handler.select_service_handler`'s deterministic resend
+  branch (`if rest_ref and not active_agent: await select_service_sender(...)`)
+  does not pass `delivery_button_label`/`takeaway_button_label` at all, so
+  it always renders `select_service_wa_send`'s bare "Delivery"/"Takeaway"
+  defaults instead of the app's configured labels (discount suffix
+  included). Found while wiring per-brand button-label resolution
+  (2026-08-17); this callback path predates that work and was not in scope
+  to fix — the other two service-button call sites
+  (`triage._send_service_selection`, `select_restaurant_handler`) do pass
+  it correctly.
+- [ ] "Book a table" (ELAS enquiry menu, ADR-0023) is the first enquiry
+  option whose fulfilment requires a handoff to a different graph node —
+  the other three (feedback, parking, offers) are all satisfied by tools
+  already bound to triage. The option deliberately keeps
+  `active_agent="triage_agent"` and relies on triage's LLM to call the real,
+  guarded `transfer_to_dinein` tool. This repo has a documented production
+  case of a similar system-message instruction not being reliably followed
+  (`select_restaurant_handler`'s docstring, on_callback_handler.py). The
+  failure mode here is degraded (triage prose-answers instead of
+  transferring), not looping — the existing anti-loop `SystemMessage` in
+  `_run_selected_enquiry` prevents re-showing the menu — but if this is
+  observed in real conversations, escalate to a deterministic transfer
+  (mirroring `select_restaurant_handler`'s pattern: write state and call
+  `transfer_to_dinein`'s logic directly from the callback handler, bypassing
+  the model for this one option) rather than tightening the prompt further.
+
 The detailed rationale and source references remain in
 `docs/architecture/shared-agent-runtime-decisions.md`.
 

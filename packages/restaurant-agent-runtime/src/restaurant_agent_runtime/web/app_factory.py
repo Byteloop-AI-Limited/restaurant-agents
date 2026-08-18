@@ -57,7 +57,7 @@ def _register_whatsapp_handlers(
     bindings: AgentBindings,
 ) -> None:
     from pywa import filters
-    from pywa.handlers import CallbackButtonHandler, MessageHandler
+    from pywa.handlers import CallbackButtonHandler, CallbackSelectionHandler, MessageHandler
 
     from restaurant_agent_runtime.watomation.on_callback_handler import (
         admin_collection_ready,
@@ -65,6 +65,7 @@ def _register_whatsapp_handlers(
         restaurant_order_confirmation_handler,
         select_enquiry_handler,
         select_consent_handler,
+        select_restaurant_handler,
         select_service_handler,
     )
     from restaurant_agent_runtime.watomation.on_message_graph_handler import (
@@ -163,6 +164,16 @@ def _register_whatsapp_handlers(
             runtime=runtime,
         )
 
+    async def bound_restaurant(client, callback):
+        return await select_restaurant_handler(
+            client,
+            callback,
+            callback_data_type=bindings.callback_data_type,
+            graph_adapter=graph_adapter,
+            runtime=runtime,
+            select_service_sender=bindings.select_service_sender,
+        )
+
     wa.add_handlers(
         MessageHandler(callback=bound_reset, filters=WHEN_RESET),
         MessageHandler(
@@ -200,7 +211,15 @@ def _register_whatsapp_handlers(
             callback=bound_service,
             filters=filters.contains("/SelectService"),
         ),
+        # /SelectEnquiry is now sent as a SectionList (ADR-0023), whose row
+        # taps arrive as CallbackSelection updates, not CallbackButton. The
+        # CallbackButtonHandler is kept so enquiry menus already delivered
+        # to a live chat before this release still work.
         CallbackButtonHandler(
+            callback=bound_enquiry,
+            filters=filters.contains("/SelectEnquiry"),
+        ),
+        CallbackSelectionHandler(
             callback=bound_enquiry,
             filters=filters.contains("/SelectEnquiry"),
         ),
@@ -209,6 +228,15 @@ def _register_whatsapp_handlers(
             filters=filters.contains("/SelectConsent"),
         ),
     )
+    # Only multi-restaurant apps configure restaurant_selection; registering
+    # this handler unconditionally would be dead weight for every other app.
+    if runtime.presentation.restaurant_selection is not None:
+        wa.add_handlers(
+            CallbackButtonHandler(
+                callback=bound_restaurant,
+                filters=filters.contains("/SelectRestaurant"),
+            ),
+        )
 
 
 def create_restaurant_app(
@@ -224,8 +252,16 @@ def create_restaurant_app(
     include_order_router: bool = True,
     include_rider_router: bool = True,
     include_thread_router: bool = True,
+    include_reservation_router: bool = False,
 ) -> FastAPI:
     """Create one independently configured restaurant application."""
+
+    selection = presentation.restaurant_selection
+    if selection is not None and selection.choice_for(identity.rest_ref) is None:
+        raise ValueError(
+            f"restaurant_selection must include the app's own identity "
+            f"rest_ref={identity.rest_ref!r} as one of its choices"
+        )
 
     settings = settings_loader(identity)
 
@@ -327,4 +363,10 @@ def create_restaurant_app(
         )
 
         app.include_router(thread_router, prefix="/thread-hooks")
+    if include_reservation_router:
+        from restaurant_agent_runtime.watomation.routers.reservation_hooks import (
+            router as reservation_router,
+        )
+
+        app.include_router(reservation_router, prefix="/reservation-hooks")
     return app

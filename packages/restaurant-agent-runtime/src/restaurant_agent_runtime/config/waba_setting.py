@@ -12,7 +12,8 @@ from pywa_async import WhatsApp
 
 # %%
 
-WABA_VALIDATE_UPDATES = True
+# Signature validation intentionally off for all apps; see ADR-0022.
+WABA_VALIDATE_UPDATES = False
 
 
 class WabaBusinessSettings(BaseSettings):

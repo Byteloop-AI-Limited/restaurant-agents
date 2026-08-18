@@ -77,6 +77,18 @@ External Ordelo/rider/takeaway workflow > FoodOrder fulfilment projection
 `>` means “is authoritative over,” not data-flow direction. A lower-level
 projection may be updated from an event but must not contradict its source.
 
+```text
+Restaurant selection (multi-restaurant apps only, ADR-0020):
+RestaurantSelection config > AgentState["selected_rest_ref"]
+```
+
+`AgentState["selected_rest_ref"]` is a conversation-scoped projection of the
+customer's brand choice. It has authority only over the menu link and CTA
+image; it has no authority over `RestaurantMaster`, `OperationalLookupCache`,
+`CustomerMaster`, `CustRestMap`, or `Thread` identity, all of which remain
+scoped to the app's own invariant `rest_ref` regardless of which brand the
+customer chose.
+
 ## Core Records by Role
 
 ### Persisted business records
@@ -98,7 +110,8 @@ projection may be updated from an event but must not contradict its source.
 | `RestaurantSettingsBundle` | Environment/dependency record | Groups settings and clients loaded once at app composition |
 | `RestaurantRuntime` | Reader-style environment | Carries the exact app identity, settings, WhatsApp clients, and operational lookup cache |
 | `OperationalLookupCache` | Process-local runtime capability | Caches only stable operational configuration; never transactional records |
-| `RestaurantPrompts` | Immutable input record | Supplies complete app-owned prompts |
+| `RestaurantPrompts` | Immutable input record | Supplies complete app-owned prompts, plus the optional dine-in prompt that activates the optional standard Dine-in Agent (ADR-0021) |
+| `RestaurantSelection` / `RestaurantChoice` | Immutable configuration value | App-owned config for a multi-restaurant app's selection gate; absent by default (ADR-0020) |
 | `AgentBindings` | Record of functions/types | Supplies native WhatsApp callback composition values |
 | `Thread` | Persisted runtime session | Correlates Restaurant, recipient, graph checkpoint, and lifecycle |
 | `AgentState` | Runtime state map | Drives graph routing and conversational continuity |

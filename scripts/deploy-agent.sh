@@ -2,7 +2,7 @@
 set -eu
 
 usage() {
-    echo "Usage: $0 --app {bnat|sfcs} [extra fly deploy args...]" >&2
+    echo "Usage: $0 --app {bnat|sfcs|elas} [extra fly deploy args...]" >&2
 }
 
 if [ "$#" -lt 2 ] || [ "$1" != "--app" ]; then
@@ -19,6 +19,9 @@ case "$app" in
         ;;
     sfcs)
         app_package="sfcs-agent"
+        ;;
+    elas)
+        app_package="elas-agent"
         ;;
     *)
         usage

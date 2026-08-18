@@ -29,6 +29,7 @@ from restaurant_agent_runtime.rest_agent.agents.agent_harness import (
     AgentState,
     ContextSchema,
     send_restaurant_menu_tool as _harness_send_menu_tool,
+    transfer_to_dinein,
     transfer_to_takeaway,
     transfer_to_triage,
     update_customer,
@@ -38,6 +39,7 @@ from restaurant_agent_runtime.rest_agent.agent_wa_senders import (
     send_update_address_wa,
 )
 from restaurant_agent_runtime.rest_agent.prompt_runtime import render_prompt_middleware
+from restaurant_agent_runtime.rest_agent.restaurant_selection import dinein_available
 from restaurant_agent_runtime.rest_agent.rider_location_support import (
     send_rider_location_reply,
 )
@@ -489,6 +491,9 @@ async def answer_general_query(
         return "I can transfer you to our takeaway team for collection orders."
 
     if any(k in q for k in ["dine in", "dine-in", "eat in", "reservation", "table"]):
+        ctx = runtime.context
+        if dinein_available(state, ctx.restaurant_selection, ctx.reservation_base_url):
+            return "Call `transfer_to_dinein` to answer this."
         return "We do not take table reservations; please visit as a walk-in."
 
     if any(k in q for k in ["add", "extra", "change", "edit", "modify", "amend", "cancel"]):
@@ -841,10 +846,13 @@ from langchain.agents import create_agent
 
 
 # %%
-def build_delivery_agent(*, model, system_prompt: str, extra_tools=()):
+def build_delivery_agent(
+    *, model, system_prompt: str, extra_tools=(), dinein_enabled: bool = False
+):
+    dinein_tools = (transfer_to_dinein,) if dinein_enabled else ()
     return create_agent(
         model=model,
-        tools=[*delivery_tools, *extra_tools],
+        tools=[*delivery_tools, *dinein_tools, *extra_tools],
         system_prompt=system_prompt,
         middleware=[
             render_prompt_middleware(system_prompt),

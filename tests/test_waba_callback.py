@@ -55,7 +55,7 @@ def test_runtime_details_masks_credentials_with_only_four_character_suffixes():
         "app_id": "123456",
         "token_hint": "****9012",
         "app_secret_hint": "****7890",
-        "validate_updates": True,
+        "validate_updates": False,
     }
     assert mask_secret("tiny") == "****"
 

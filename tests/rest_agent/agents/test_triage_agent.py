@@ -22,8 +22,10 @@ def _runtime(*, events: list[tuple[str, dict]], contact_phone: str | None = None
             operational_lookups=object(),
             delivery_button_label="Delivery",
             takeaway_button_label="Collection",
+            enquiry_button_label="More options",
             restaurant_contact_phone=contact_phone,
             client_ordelo=object(),
+            restaurant_selection=None,
         )
     )
 
@@ -60,6 +62,7 @@ async def test_service_selection_sends_answer_before_buttons_and_ends_turn(monke
                 "operational_lookups": ANY,
                 "delivery_button_label": "Delivery",
                 "takeaway_button_label": "Collection",
+                "enquiry_button_label": "More options",
             },
         ),
     ]

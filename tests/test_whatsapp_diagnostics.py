@@ -58,7 +58,10 @@ def test_adhoc_order_reset_commands_are_not_part_of_shared_handler_module():
 
 def test_standard_message_registration_includes_only_payment_simulation():
     wa = FakeWhatsApp()
-    runtime = SimpleNamespace(async_wa_client=wa)
+    runtime = SimpleNamespace(
+        async_wa_client=wa,
+        presentation=SimpleNamespace(restaurant_selection=None),
+    )
 
     _register_whatsapp_handlers(
         runtime=runtime,

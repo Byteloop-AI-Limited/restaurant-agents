@@ -16,6 +16,7 @@ COPY pyproject.toml uv.lock ./
 COPY packages/restaurant-agent-runtime/pyproject.toml packages/restaurant-agent-runtime/pyproject.toml
 COPY apps/sfcs/pyproject.toml apps/sfcs/pyproject.toml
 COPY apps/bnat/pyproject.toml apps/bnat/pyproject.toml
+COPY apps/elas/pyproject.toml apps/elas/pyproject.toml
 
 RUN test -n "$APP_PACKAGE" \
     && uv sync --frozen --no-dev --package "$APP_PACKAGE" --no-install-workspace

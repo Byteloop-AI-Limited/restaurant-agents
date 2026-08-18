@@ -1,8 +1,8 @@
 """Burger Nation-owned identity and presentation settings."""
 
 from restaurant_agent_runtime import (
+    DEFAULT_ENQUIRY_OPTIONS,
     EnquiryMenu,
-    EnquiryOption,
     RestaurantIdentity,
     RestaurantPresentation,
 )
@@ -17,14 +17,10 @@ PRESENTATION = RestaurantPresentation(
     ),
     delivery_button_label="Delivery (15% off)",
     takeaway_button_label="Takeaway (10% off)",
+    delivery_promo_caption="Limited Time Offer - 15% off on all delivery orders",
+    takeaway_promo_caption="Limited Time Offer - 10% off on all takeaway orders",
     enquiry_menu=EnquiryMenu(
         prompt="What would you like help with?",
-        options=(
-            EnquiryOption("Share feedback", "I want to share feedback"),
-            EnquiryOption(
-                "Parking availability", "I want to know about parking availability"
-            ),
-            EnquiryOption("Subscribe for offers", "I want to subscribe for offers"),
-        ),
+        options=DEFAULT_ENQUIRY_OPTIONS,
     ),
 )

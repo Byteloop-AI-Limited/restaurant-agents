@@ -3,10 +3,10 @@
 from typing import Literal
 
 from pydantic import BaseModel
-from pywa.types import Button, ButtonUrl
+from pywa.types import Button, ButtonUrl, Section, SectionList, SectionRow
 from pywa_async import WhatsApp
 
-from restaurant_agent_runtime.runtime import EnquiryMenu
+from restaurant_agent_runtime.runtime import EnquiryMenu, EnquiryOption, RestaurantSelection
 from restaurant_agent_runtime.services.operational_lookup_cache import (
     OperationalLookupCache,
 )
@@ -45,6 +45,7 @@ async def select_service_wa_send(
     operational_lookups: OperationalLookupCache,
     delivery_button_label: str = "Delivery",
     takeaway_button_label: str = "Takeaway",
+    enquiry_button_label: str = "More options",
 ) -> None:
     """
     Sends order type selection buttons with rest_ref included.
@@ -83,10 +84,35 @@ async def select_service_wa_send(
         buttons.append(Button(title=delivery_button_label, callback_data=delivery.model_dump_json()))
     if operational_lookups.accepts_new_order("takeaway", recipient):
         buttons.append(Button(title=takeaway_button_label, callback_data=takeaway.model_dump_json()))
-    buttons.append(Button(title="Enquiry", callback_data=inquiry.model_dump_json()))
+    buttons.append(Button(title=enquiry_button_label, callback_data=inquiry.model_dump_json()))
     await wa_client.send_message(
         to=recipient,
         text=selection_text,
+        buttons=buttons,
+    )
+
+
+# %% Restaurant selection (multi-restaurant apps only)
+async def select_restaurant_wa_send(
+    recipient: str,
+    wa_client: WhatsApp,
+    selection: RestaurantSelection,
+) -> None:
+    """Send the app-owned restaurant choices (WhatsApp permits at most three)."""
+    buttons = [
+        Button(
+            title=choice.title,
+            callback_data=CallbackButtonData(
+                action="/SelectRestaurant",
+                rest_ref=choice.rest_ref,
+                human_msg=choice.human_message,
+            ).model_dump_json(),
+        )
+        for choice in selection.choices
+    ]
+    await wa_client.send_message(
+        to=recipient,
+        text=selection.prompt,
         buttons=buttons,
     )
 
@@ -127,6 +153,23 @@ async def select_marketing_consent_wa_send(
     )
 
 
+def build_enquiry_callback_data(rest_ref: str, option: EnquiryOption) -> str:
+    """Return the /SelectEnquiry payload for one option, byte-identical across senders.
+
+    `active_agent` stays `"triage_agent"` for every option — including a
+    dine-in booking option — so `human_message` reaches triage as a plain
+    HumanMessage and the model routes it through the existing guarded
+    `transfer_to_dinein` tool rather than bypassing its guards. See
+    ADR-0023.
+    """
+    return CallbackButtonData(
+        action="/SelectEnquiry",
+        rest_ref=str(rest_ref).lower(),
+        active_agent="triage_agent",
+        human_msg=option.human_message,
+    ).model_dump_json()
+
+
 async def select_enquiry_wa_send(
     recipient: str,
     wa_client: WhatsApp,
@@ -134,24 +177,22 @@ async def select_enquiry_wa_send(
     *,
     menu: EnquiryMenu,
 ) -> None:
-    """Send the app-owned enquiry choices (WhatsApp permits at most three)."""
-    normalized_rest_ref = str(rest_ref).lower()
-    buttons = [
-        Button(
+    """Send the app-owned enquiry choices as a WhatsApp SectionList (up to ten rows)."""
+    rows = [
+        SectionRow(
             title=option.title,
-            callback_data=CallbackButtonData(
-                action="/SelectEnquiry",
-                rest_ref=normalized_rest_ref,
-                active_agent="triage_agent",
-                human_msg=option.human_message,
-            ).model_dump_json(),
+            callback_data=build_enquiry_callback_data(rest_ref, option),
+            description=option.description,
         )
         for option in menu.options
     ]
     await wa_client.send_message(
         to=recipient,
         text=menu.prompt,
-        buttons=buttons,
+        buttons=SectionList(
+            button_title=menu.button_title,
+            sections=[Section(title=menu.button_title, rows=rows)],
+        ),
     )
 # %%
 async def confirm_delivery_address_wa(
@@ -221,6 +262,8 @@ async def send_restaurant_menu(
     wa_client: WhatsApp,
     logo_url: str,
     operational_lookups,
+    delivery_promo_caption: str,
+    takeaway_promo_caption: str,
     order_type: Literal["delivery", "takeaway"] = "delivery",
     distance: float = 0.5,
 ) -> ValueError | None:
@@ -242,6 +285,8 @@ async def send_restaurant_menu(
             wa_client=wa_client,
             logo_url=logo_url,
             operational_lookups=operational_lookups,
+            delivery_promo_caption=delivery_promo_caption,
+            takeaway_promo_caption=takeaway_promo_caption,
         )
     except ValueError as err:
         return err
@@ -249,6 +294,26 @@ async def send_restaurant_menu(
 
 
 # await send_restaurant_menu(recipient="447448440754", minimum_order=12, thread_id="12345")
+
+
+# %% Dine-in reservation link (optional standard dine-in node only)
+async def reservation_link_wa_send(
+    recipient: str,
+    reservation_url: str,
+    wa_client: WhatsApp,
+    wa_name: str = "there",
+) -> None:
+    await wa_client.send_message(
+        to=recipient,
+        header="Table Reservation",
+        text=(
+            f"Hi {wa_name}! \n\nPlease fill this form for reservation request. "
+            "Once submitted we will be in touch with you to confirm. \n\n"
+            "Thank you and goodbye."
+        ),
+        reply_to_message_id=None,
+        buttons=ButtonUrl(title="Make Reservation", url=reservation_url),
+    )
 
 
 # %%

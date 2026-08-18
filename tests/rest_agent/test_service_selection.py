@@ -60,7 +60,10 @@ async def test_retained_typed_selection_preserves_the_current_specialist():
         ),
         run_rest_graph_with_custom_msg=AsyncMock(),
     )
-    runtime = SimpleNamespace(async_wa_client=SimpleNamespace(send_message=AsyncMock()))
+    runtime = SimpleNamespace(
+        async_wa_client=SimpleNamespace(send_message=AsyncMock()),
+        presentation=SimpleNamespace(restaurant_selection=None),
+    )
 
     await route_service_selection(
         recipient="447000000001",
@@ -87,6 +90,7 @@ async def test_released_typed_delivery_selection_clears_old_order_state():
     )
     runtime = SimpleNamespace(
         operational_lookups=SimpleNamespace(accepts_new_order=lambda *_: True),
+        presentation=SimpleNamespace(restaurant_selection=None),
     )
 
     await route_service_selection(
@@ -117,6 +121,7 @@ async def test_closed_typed_selection_does_not_overwrite_released_state():
     runtime = SimpleNamespace(
         operational_lookups=SimpleNamespace(accepts_new_order=lambda *_: False),
         async_wa_client=wa_client,
+        presentation=SimpleNamespace(restaurant_selection=None),
     )
 
     await route_service_selection(

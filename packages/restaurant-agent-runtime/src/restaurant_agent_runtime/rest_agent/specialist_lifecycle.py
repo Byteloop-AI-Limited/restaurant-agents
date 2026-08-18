@@ -173,7 +173,12 @@ def retained_specialist_state(
 
 
 def released_specialist_state() -> dict[str, Any]:
-    """Return the profile-only baseline after a specialist flow has ended."""
+    """Return the profile-only baseline after a specialist flow has ended.
+
+    Deliberately does not reset `selected_rest_ref`: a completed order must
+    not make a multi-restaurant app re-ask which restaurant the customer
+    meant. Do not add it to this dict.
+    """
     return {
         "active_agent": "triage_agent",
         "retain_thread": False,

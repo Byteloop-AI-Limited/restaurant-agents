@@ -19,15 +19,25 @@ apps/<app>/src/<app>_agent/rest_agent/prompts/
   takeaway_agent_prompt.md
 ```
 
+An app that configures the optional standard dine-in node (ADR-0021) owns a
+fourth file, `dinein_agent_prompt.md`, in the same directory. Its presence is
+what activates the `dinein_agent` node; an app that omits it never constructs
+that node or reaches `transfer_to_dinein`.
+
 Current applications:
 
 - SFCS: `apps/sfcs/src/sfcs_agent/rest_agent/prompts/`
 - BNAT: `apps/bnat/src/bnat_agent/rest_agent/prompts/`
+- ELAS: `apps/elas/src/elas_agent/rest_agent/prompts/` — the first app with a
+  fourth (`dinein_agent_prompt.md`) file and the first to configure
+  `RestaurantPresentation.restaurant_selection` (ADR-0020), so its triage
+  prompt also carries a restaurant-selection gate that SFCS and BNAT do not.
 
 The shared runtime owns agent construction, state, routing, middleware, and
 standard tools. It does not own prompt fragments and does not merge a shared
-base prompt with an application override. `agent_recipe.py` reads all three
-files into `RestaurantPrompts` during module import.
+base prompt with an application override. `agent_recipe.py` reads all
+configured prompt files (three, or four when dine-in is enabled) into
+`RestaurantPrompts` during module import.
 
 ## Decide the Change Boundary First
 
@@ -42,9 +52,22 @@ files into `RestaurantPrompts` during module import.
 
 Do not ask a prompt to call a tool that the selected node does not expose. Do
 not copy a shared agent module into an application to make a prompt change.
-Keep an Enquiry Menu to WhatsApp's three-button maximum. For a genuinely new
-callback workflow, use an app-owned native PyWa handler instead of extending
-the standard menu into a callback registry.
+Keep an Enquiry Menu to WhatsApp's ten-row SectionList maximum (ADR-0023).
+For a genuinely new callback workflow, use an app-owned native PyWa handler
+instead of extending the standard menu into a callback registry.
+
+Every button title configured through `RestaurantPresentation` or
+`RestaurantChoice` (including a discount suffix like `"(20% off)"`) is
+capped at 20 characters; `EnquiryOption.title` (a SectionList row, not a
+button) is capped at 24. Both are validated at construction time — see
+[Callback Button and List-Row Title Length](webhook_endpoints.md#callback-button-and-list-row-title-length).
+
+An enquiry option that requires a handoff to a different standard node (for
+example ELAS's "Book a table", which reaches `dinein_agent`) must keep
+`active_agent="triage_agent"` like every other option — never set the
+target node's name directly — and the app must configure the matching
+`RestaurantPrompts` field (`dinein` for a dine-in option) so triage actually
+has a tool that can satisfy the intent. See ADR-0023.
 
 ## Cross-App Change Rules
 
@@ -86,10 +109,15 @@ the standard menu into a callback registry.
 Feedback, parking, contact details, events, and similar non-ordering questions
 remain in triage unless the customer explicitly requests a specialized service.
 
-### 4. Inquiry selection stays in triage
+### 4. Enquiry selection stays in triage
 
-The `Inquiry` option activates `triage_agent`. Triage should ask one concise
-question when the inquiry is not yet clear.
+The third static service button (`RestaurantPresentation.enquiry_button_label`,
+default "More options") activates `triage_agent` and opens the app's
+`EnquiryMenu` SectionList (ADR-0023). Triage should ask one concise question
+when the enquiry is not yet clear. An option whose fulfilment requires a
+different node (a dine-in booking option, for example) still activates
+`triage_agent` — the LLM transfers from there via the normal guarded tool,
+never by targeting the other node directly.
 
 ### 5. Restaurant identity must match the owning app
 
@@ -99,6 +127,12 @@ question when the inquiry is not yet clear.
   prompts.
 - Do not change `rest_ref`, WABA namespace, or presentation values in prompt
   text; those belong in the app's identity and settings composition.
+- For an app that configures `restaurant_selection` (currently ELAS only), use
+  the `{selected_restaurant_name}` template variable rather than a literal
+  brand name anywhere the prompt states which restaurant is active — the
+  shared runtime resolves it to "not yet selected" before a choice is
+  captured, so a literal brand name in that spot renders as a false
+  statement. See ADR-0020 and `prompt_runtime.py`.
 
 ## Prompt Writing Rules
 
