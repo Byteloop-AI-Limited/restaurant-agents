@@ -103,7 +103,10 @@ customer-facing composition data, not a graph node, callback registry, or
 persisted state. An option whose fulfilment requires a different standard
 node (for example a dine-in booking option) still activates
 `triage_agent`, exactly like every other option — the LLM transfers from
-there via the node's own guarded tool.
+there via the node's own guarded tool. An option may also be restricted to
+specific brands of a multi-restaurant app via `only_for_rest_refs` (ADR-0024)
+— a restricted row never renders for a Selected Restaurant it does not name,
+regardless of whether the underlying tool would also guard against it.
 
 ## F
 

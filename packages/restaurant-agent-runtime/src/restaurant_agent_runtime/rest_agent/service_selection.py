@@ -120,7 +120,7 @@ async def route_tool_service_selection(
     """Apply the same service-selection policy from a graph transfer tool."""
     context = runtime.context
     if selection_pending(state, context.restaurant_selection):
-        return selection_required_block(tool_call_id)
+        return await selection_required_block(context, tool_call_id)
     disposition = selection_disposition(
         state=state,
         service=service,

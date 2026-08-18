@@ -185,11 +185,26 @@ async def select_service_handler(
     # Treat Enquiry as a triage entry point even when a stale service button
     # still carries the delivery/takeaway agent from the preceding turn.
     if callback_data.human_msg == "I have an enquiry":
+        try:
+            current_state = await graph_adapter.debug_state_values(recipient=recipient)
+            selected_rest_ref = current_state.get("selected_rest_ref")
+        except Exception:
+            # Degrade to unrestricted rows only, matching
+            # route_service_selection's precedent for a failed state read on
+            # this same callback boundary — a brand-restricted row simply
+            # stays hidden rather than blocking the whole menu.
+            logger.exception(
+                "Could not inspect selected_rest_ref for recipient {}; "
+                "showing brand-unrestricted enquiry rows only",
+                recipient,
+            )
+            selected_rest_ref = None
         await select_enquiry_wa_send(
             recipient=recipient,
             wa_client=wa,
             rest_ref=rest_ref,
             menu=runtime.presentation.enquiry_menu,
+            selected_rest_ref=selected_rest_ref,
         )
         return
 

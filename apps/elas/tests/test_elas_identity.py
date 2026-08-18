@@ -17,6 +17,27 @@ def test_elas_identity_is_app_owned():
     assert PRESENTATION.enquiry_button_label == "More options"
 
 
+def test_book_a_table_is_restricted_to_elai():
+    """Wings and Things (CHKS) has supports_dine_in=False, so the enquiry
+    menu must hide this row for it rather than rely on transfer_to_dinein's
+    guard to decline after the tap — see ADR-0024."""
+    options = {option.title: option for option in PRESENTATION.enquiry_menu.options}
+    assert options["Book a table"].only_for_rest_refs == ("ELAS",)
+    for title in ("Share feedback", "Parking availability", "Subscribe for offers"):
+        assert options[title].only_for_rest_refs is None
+    assert [
+        o.title for o in PRESENTATION.enquiry_menu.visible_options_for("CHKS")
+    ] == ["Share feedback", "Parking availability", "Subscribe for offers"]
+    assert [
+        o.title for o in PRESENTATION.enquiry_menu.visible_options_for("ELAS")
+    ] == [
+        "Share feedback",
+        "Parking availability",
+        "Subscribe for offers",
+        "Book a table",
+    ]
+
+
 def test_elas_configures_restaurant_selection_including_its_own_identity():
     assert PRESENTATION.restaurant_selection is RESTAURANT_SELECTION
     assert [choice.rest_ref for choice in RESTAURANT_SELECTION.choices] == [

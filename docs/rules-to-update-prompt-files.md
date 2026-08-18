@@ -69,6 +69,14 @@ target node's name directly — and the app must configure the matching
 `RestaurantPrompts` field (`dinein` for a dine-in option) so triage actually
 has a tool that can satisfy the intent. See ADR-0023.
 
+An option may also need restricting to specific brands of a multi-restaurant
+app — for example, a dine-in booking option only makes sense for a
+`RestaurantChoice` with `supports_dine_in=True`. Set
+`EnquiryOption.only_for_rest_refs` to the tuple of `rest_ref`s that should
+see it, rather than relying on the destination tool's own guard to decline
+politely after the tap; the guard remains only as a backstop for a customer
+who types the request instead of tapping the row. See ADR-0024.
+
 ## Cross-App Change Rules
 
 - A restaurant-specific policy or identity change updates only the owning app.

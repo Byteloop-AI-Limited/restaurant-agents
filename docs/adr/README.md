@@ -37,7 +37,8 @@ decision; add a new ADR that supersedes it.
 | [0020](0020-app-owned-restaurant-selection.md) | Accepted | App-owned restaurant selection for multi-brand apps |
 | [0021](0021-optional-standard-dine-in-node.md) | Accepted | Optional standard dine-in node |
 | [0022](0022-disable-webhook-signature-validation.md) | Accepted | Disable webhook signature validation |
-| [0023](0023-sectionlist-enquiry-menus.md) | Accepted | WhatsApp SectionList enquiry menus with an app-owned extra option |
+| [0023](0023-sectionlist-enquiry-menus.md) | Superseded | WhatsApp SectionList enquiry menus with an app-owned extra option |
+| [0024](0024-per-brand-enquiry-rows.md) | Accepted | Per-brand enquiry rows and tool-response-only transfer guards |
 
 ## Creating an ADR
 

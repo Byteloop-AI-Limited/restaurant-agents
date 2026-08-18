@@ -242,10 +242,15 @@ async def _repair_malformed_tool_call_tail(graph, config: dict) -> bool:
         reason=reason,
         tool_call_ids=tool_call_ids,
     )
+    # `as_node` is deliberately omitted: this graph's real nodes are
+    # triage_agent/delivery_agent/takeaway_agent/dinein_agent, none of which
+    # is named "toolNode" (a prior value here, which raised
+    # InvalidUpdateError whenever this repair path actually ran). Omitting it
+    # lets LangGraph infer the last node that wrote state, per aupdate_state's
+    # own contract.
     await graph.aupdate_state(
         config=config,
         values={"messages": messages_to_remove},
-        as_node="toolNode",
     )
     return True
 

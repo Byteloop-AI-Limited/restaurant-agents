@@ -77,12 +77,16 @@ PRESENTATION = RestaurantPresentation(
         button_title="Choose an option",
         options=(
             *DEFAULT_ENQUIRY_OPTIONS,
-            # Shown for both brands (Elai and Wings and Things); Wings and
-            # Things has supports_dine_in=False, so transfer_to_dinein's
-            # existing guard (not a hidden row) declines politely — see
-            # ADR-0023. No `description`: a "Elai only" subtitle would also
-            # render for Elai customers, where it reads wrong.
-            EnquiryOption("Book a table", "I want to book a table"),
+            # Restricted to Elai: Wings and Things has supports_dine_in=False.
+            # ADR-0023 originally showed this row to both brands and relied on
+            # transfer_to_dinein's guard to decline politely; ADR-0024
+            # reverses that after a production crash and hides the row for
+            # CHKS instead, keeping the guard only as a typed-intent backstop.
+            EnquiryOption(
+                "Book a table",
+                "I want to book a table",
+                only_for_rest_refs=("ELAS",),
+            ),
         ),
     ),
     restaurant_selection=RESTAURANT_SELECTION,

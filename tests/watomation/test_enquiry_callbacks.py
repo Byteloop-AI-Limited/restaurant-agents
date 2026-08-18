@@ -41,7 +41,10 @@ async def test_enquiry_service_callback_bypasses_stale_fulfilment_agent(monkeypa
         "select_enquiry_wa_send",
         enquiry_sender,
     )
-    graph_adapter = SimpleNamespace(run_rest_graph_with_custom_msg=AsyncMock())
+    graph_adapter = SimpleNamespace(
+        debug_state_values=AsyncMock(return_value={"selected_rest_ref": None}),
+        run_rest_graph_with_custom_msg=AsyncMock(),
+    )
     runtime = SimpleNamespace(
         identity=SimpleNamespace(rest_ref="BNAT"),
         settings=SimpleNamespace(database_client=object()),
@@ -71,8 +74,155 @@ async def test_enquiry_service_callback_bypasses_stale_fulfilment_agent(monkeypa
         wa_client=ANY,
         rest_ref="bnat",
         menu=BNAT_ENQUIRY_MENU,
+        selected_rest_ref=None,
     )
     graph_adapter.run_rest_graph_with_custom_msg.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_enquiry_service_callback_hides_brand_restricted_rows_for_chks(monkeypatch):
+    """The primary "More options" render path (/SelectService, not the LLM
+    tool) must resolve the customer's chosen brand and hide restricted rows
+    accordingly — this is the path that broke in production (ADR-0024)."""
+    elas_menu = EnquiryMenu(
+        prompt="What would you like help with?",
+        options=(
+            *BNAT_ENQUIRY_MENU.options,
+            EnquiryOption(
+                "Book a table", "I want to book a table", only_for_rest_refs=("ELAS",)
+            ),
+        ),
+    )
+    enquiry_sender = AsyncMock()
+    monkeypatch.setattr(on_callback_handler, "select_enquiry_wa_send", enquiry_sender)
+    graph_adapter = SimpleNamespace(
+        debug_state_values=AsyncMock(return_value={"selected_rest_ref": "CHKS"}),
+        run_rest_graph_with_custom_msg=AsyncMock(),
+    )
+    runtime = SimpleNamespace(
+        identity=SimpleNamespace(rest_ref="ELAS"),
+        settings=SimpleNamespace(database_client=object()),
+        presentation=SimpleNamespace(enquiry_menu=elas_menu),
+    )
+    callback = _callback(
+        callback_id="chks-enquiry-service",
+        data={
+            "action": "/SelectService",
+            "rest_ref": "elas",
+            "active_agent": "triage_agent",
+            "human_msg": "I have an enquiry",
+        },
+    )
+
+    await on_callback_handler.select_service_handler(
+        SimpleNamespace(),
+        callback,
+        callback_data_type=CallbackButtonData,
+        graph_adapter=graph_adapter,
+        runtime=runtime,
+        select_service_sender=AsyncMock(),
+    )
+
+    enquiry_sender.assert_awaited_once_with(
+        recipient="447000000001",
+        wa_client=ANY,
+        rest_ref="elas",
+        menu=elas_menu,
+        selected_rest_ref="CHKS",
+    )
+
+
+@pytest.mark.asyncio
+async def test_enquiry_service_callback_shows_brand_restricted_rows_for_elas(monkeypatch):
+    elas_menu = EnquiryMenu(
+        prompt="What would you like help with?",
+        options=(
+            *BNAT_ENQUIRY_MENU.options,
+            EnquiryOption(
+                "Book a table", "I want to book a table", only_for_rest_refs=("ELAS",)
+            ),
+        ),
+    )
+    enquiry_sender = AsyncMock()
+    monkeypatch.setattr(on_callback_handler, "select_enquiry_wa_send", enquiry_sender)
+    graph_adapter = SimpleNamespace(
+        debug_state_values=AsyncMock(return_value={"selected_rest_ref": "ELAS"}),
+        run_rest_graph_with_custom_msg=AsyncMock(),
+    )
+    runtime = SimpleNamespace(
+        identity=SimpleNamespace(rest_ref="ELAS"),
+        settings=SimpleNamespace(database_client=object()),
+        presentation=SimpleNamespace(enquiry_menu=elas_menu),
+    )
+    callback = _callback(
+        callback_id="elas-enquiry-service",
+        data={
+            "action": "/SelectService",
+            "rest_ref": "elas",
+            "active_agent": "triage_agent",
+            "human_msg": "I have an enquiry",
+        },
+    )
+
+    await on_callback_handler.select_service_handler(
+        SimpleNamespace(),
+        callback,
+        callback_data_type=CallbackButtonData,
+        graph_adapter=graph_adapter,
+        runtime=runtime,
+        select_service_sender=AsyncMock(),
+    )
+
+    enquiry_sender.assert_awaited_once_with(
+        recipient="447000000001",
+        wa_client=ANY,
+        rest_ref="elas",
+        menu=elas_menu,
+        selected_rest_ref="ELAS",
+    )
+
+
+@pytest.mark.asyncio
+async def test_enquiry_service_callback_degrades_to_unrestricted_rows_on_a_failed_read(
+    monkeypatch,
+):
+    enquiry_sender = AsyncMock()
+    monkeypatch.setattr(on_callback_handler, "select_enquiry_wa_send", enquiry_sender)
+    graph_adapter = SimpleNamespace(
+        debug_state_values=AsyncMock(side_effect=RuntimeError("db unavailable")),
+        run_rest_graph_with_custom_msg=AsyncMock(),
+    )
+    runtime = SimpleNamespace(
+        identity=SimpleNamespace(rest_ref="BNAT"),
+        settings=SimpleNamespace(database_client=object()),
+        presentation=SimpleNamespace(enquiry_menu=BNAT_ENQUIRY_MENU),
+    )
+    callback = _callback(
+        callback_id="failed-state-read-enquiry-service",
+        data={
+            "action": "/SelectService",
+            "rest_ref": "bnat",
+            "active_agent": "takeaway_agent",
+            "human_msg": "I have an enquiry",
+        },
+    )
+
+    await on_callback_handler.select_service_handler(
+        SimpleNamespace(),
+        callback,
+        callback_data_type=CallbackButtonData,
+        graph_adapter=graph_adapter,
+        runtime=runtime,
+        select_service_sender=AsyncMock(),
+    )
+
+    enquiry_sender.assert_awaited_once_with(
+        recipient="447000000001",
+        wa_client=ANY,
+        rest_ref="bnat",
+        menu=BNAT_ENQUIRY_MENU,
+        selected_rest_ref=None,
+    )
 
 
 @pytest.mark.asyncio
@@ -234,6 +384,64 @@ def test_enquiry_option_rejects_human_message_over_callback_budget():
     EnquiryOption("Title", "A" * 100)
     with pytest.raises(ValueError, match="at most 100 characters"):
         EnquiryOption("Title", "A" * 101)
+
+
+def test_enquiry_option_is_visible_for_unrestricted_by_default():
+    option = EnquiryOption("Share feedback", "I want to share feedback")
+    assert option.is_visible_for("ELAS") is True
+    assert option.is_visible_for("CHKS") is True
+    assert option.is_visible_for(None) is True
+
+
+def test_enquiry_option_is_visible_for_respects_restriction():
+    option = EnquiryOption(
+        "Book a table", "I want to book a table", only_for_rest_refs=("ELAS",)
+    )
+    assert option.is_visible_for("ELAS") is True
+    assert option.is_visible_for("elas") is True
+    assert option.is_visible_for(" elas ") is True
+    assert option.is_visible_for("CHKS") is False
+    assert option.is_visible_for(None) is False
+
+
+def test_enquiry_option_rejects_empty_only_for_rest_refs():
+    with pytest.raises(ValueError, match="empty tuple"):
+        EnquiryOption("Book a table", "I want to book a table", only_for_rest_refs=())
+
+
+def test_enquiry_option_normalizes_only_for_rest_refs_to_stripped_uppercase():
+    option = EnquiryOption("Title", "human message", only_for_rest_refs=(" chks ",))
+    assert option.only_for_rest_refs == ("CHKS",)
+
+
+def test_enquiry_menu_visible_options_for_filters_restricted_rows():
+    menu = EnquiryMenu(
+        prompt="What would you like help with?",
+        options=(
+            EnquiryOption("Share feedback", "I want to share feedback"),
+            EnquiryOption(
+                "Book a table", "I want to book a table", only_for_rest_refs=("ELAS",)
+            ),
+        ),
+    )
+    assert [o.title for o in menu.visible_options_for("CHKS")] == ["Share feedback"]
+    assert [o.title for o in menu.visible_options_for("ELAS")] == [
+        "Share feedback",
+        "Book a table",
+    ]
+    assert [o.title for o in menu.visible_options_for(None)] == ["Share feedback"]
+
+
+def test_enquiry_menu_rejects_a_menu_with_no_always_visible_option():
+    with pytest.raises(ValueError, match="at least one option visible to every brand"):
+        EnquiryMenu(
+            prompt="What would you like help with?",
+            options=(
+                EnquiryOption(
+                    "Book a table", "I want to book a table", only_for_rest_refs=("ELAS",)
+                ),
+            ),
+        )
 
 
 class FakeOperationalLookups:

@@ -45,6 +45,7 @@ class EnquiryOption:
     title: str
     human_message: str
     description: str | None = None
+    only_for_rest_refs: tuple[str, ...] | None = None
 
     def __post_init__(self) -> None:
         title = self.title.strip()
@@ -61,9 +62,26 @@ class EnquiryOption:
             )
         if description is not None and len(description) > 72:
             raise ValueError("Enquiry option description must be at most 72 characters")
+        only_for_rest_refs = self.only_for_rest_refs
+        if only_for_rest_refs is not None:
+            only_for_rest_refs = tuple(ref.strip().upper() for ref in only_for_rest_refs)
+            if not only_for_rest_refs:
+                raise ValueError(
+                    "Enquiry option only_for_rest_refs must not be an empty tuple "
+                    "(omit it, or pass None, to show the option for every brand)"
+                )
         object.__setattr__(self, "title", title)
         object.__setattr__(self, "human_message", human_message)
         object.__setattr__(self, "description", description)
+        object.__setattr__(self, "only_for_rest_refs", only_for_rest_refs)
+
+    def is_visible_for(self, rest_ref: str | None) -> bool:
+        """Return whether this row should render for the given selected brand."""
+        if self.only_for_rest_refs is None:
+            return True
+        if rest_ref is None:
+            return False
+        return rest_ref.strip().upper() in self.only_for_rest_refs
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,9 +106,19 @@ class EnquiryMenu:
             raise ValueError("Enquiry menu button_title must not be empty")
         if len(button_title) > 20:
             raise ValueError("Enquiry menu button_title must be at most 20 characters")
+        if not any(option.only_for_rest_refs is None for option in options):
+            raise ValueError(
+                "Enquiry menu must contain at least one option visible to every "
+                "brand (only_for_rest_refs=None), so a customer whose brand is "
+                "unknown or restricted from every row still sees a non-empty menu"
+            )
         object.__setattr__(self, "prompt", prompt)
         object.__setattr__(self, "options", options)
         object.__setattr__(self, "button_title", button_title)
+
+    def visible_options_for(self, rest_ref: str | None) -> tuple[EnquiryOption, ...]:
+        """Return the options that should render for the given selected brand."""
+        return tuple(option for option in self.options if option.is_visible_for(rest_ref))
 
 
 DEFAULT_ENQUIRY_OPTIONS = (

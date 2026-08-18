@@ -230,6 +230,7 @@ async def ask_user_to_select_enquiry(
         wa_client=ctx.wa_client,
         rest_ref=(state.get("rest_ref") or ctx.rest_ref).lower(),
         menu=ctx.enquiry_menu,
+        selected_rest_ref=state.get("selected_rest_ref"),
     )
     return Command(
         goto=END,

@@ -1,6 +1,6 @@
 # ADR-0023: WhatsApp SectionList Enquiry Menus With an App-Owned Extra Option
 
-- Status: Accepted
+- Status: Superseded by [ADR-0024](0024-per-brand-enquiry-rows.md)
 - Date: 2026-08-18
 - Decision owners: Restaurant platform owner
 - Supersedes: [ADR-0015](0015-app-owned-enquiry-menus.md)

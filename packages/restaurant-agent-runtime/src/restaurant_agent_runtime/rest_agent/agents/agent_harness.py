@@ -67,7 +67,6 @@ from restaurant_agent_runtime.rest_agent.service_selection import (
 )
 from restaurant_agent_runtime.rest_agent.restaurant_selection import (
     dinein_available,
-    dinein_unsupported_block,
     resolve_delivery_promo_caption,
     resolve_menu_logo_url,
     resolve_menu_rest_ref,
@@ -466,7 +465,7 @@ def transfer_to_triage(
 # %%
 async def transfer_to_dinein(
     runtime: ToolRuntime[ContextSchema],
-) -> Command:
+) -> Command | str:
     """Transfer the conversation to the dine-in agent.
 
     Use this tool when the customer wants to book a table or make a dine-in
@@ -477,10 +476,21 @@ async def transfer_to_dinein(
     ctx = runtime.context
 
     if selection_pending(state, ctx.restaurant_selection):
-        return selection_required_block(tool_call_id)
+        return await selection_required_block(ctx, tool_call_id)
 
     if not dinein_available(state, ctx.restaurant_selection, ctx.reservation_base_url):
-        return dinein_unsupported_block(tool_call_id)
+        # A plain string return lets LangChain's tool node wrap it into a
+        # ToolMessage carrying the originating call's tool_call_id itself,
+        # ending this turn without a Command.PARENT redirect — see
+        # selection_required_block's docstring for why that shape corrupts
+        # the checkpointed message tail. This is the typed-intent backstop:
+        # the enquiry menu no longer shows "Book a table" for a brand with
+        # supports_dine_in=False (see ADR-0024), so this only fires when the
+        # customer types the request instead of tapping it.
+        return (
+            "This restaurant does not offer dine-in reservations. Tell the "
+            "customer politely and offer delivery or takeaway instead."
+        )
 
     if (
         guard := _transfer_check_retained_specialist_work(state, tool_call_id)

@@ -13,10 +13,11 @@ from unittest.mock import AsyncMock
 
 import pytest
 from langchain_core.messages import HumanMessage
+from langgraph.graph import END
 
+from restaurant_agent_runtime.rest_agent.agents.multi_agent import route_after_agent
 from restaurant_agent_runtime.rest_agent.restaurant_selection import (
     dinein_available,
-    dinein_unsupported_block,
     resolve_menu_logo_url,
     resolve_menu_rest_ref,
     selected_choice,
@@ -99,28 +100,53 @@ def test_dinein_available_respects_per_choice_flag_and_reservation_url():
     assert dinein_available({"selected_rest_ref": "elas"}, SELECTION, None) is False
 
 
-def test_selection_required_block_redirects_to_triage():
-    command = selection_required_block("tc-1")
-    assert command.goto == "triage_agent"
-    assert command.update["active_agent"] == "triage_agent"
-    assert "ask_user_to_select_restaurant" in command.update["messages"][1].content
+@pytest.mark.asyncio
+async def test_selection_required_block_sends_buttons_and_ends_the_turn(monkeypatch):
+    """Sends the restaurant-selection buttons directly and ends the current
+    node's own turn (no Command.PARENT, no trailing SystemMessage) so the
+    checkpointed tool-call/tool-response pair stays adjacent — see the
+    docstring on `selection_required_block` for why the previous
+    parent-graph-redirect shape corrupted the message tail."""
+    sent = {}
 
+    async def fake_select_restaurant_wa_send(*, recipient, wa_client, selection):
+        sent["recipient"] = recipient
+        sent["selection"] = selection
 
-def test_dinein_unsupported_block_redirects_to_triage():
-    command = dinein_unsupported_block("tc-1")
-    assert command.goto == "triage_agent"
-    assert "does not offer dine-in" in command.update["messages"][1].content
+    monkeypatch.setattr(
+        "restaurant_agent_runtime.rest_agent.agent_wa_senders.select_restaurant_wa_send",
+        fake_select_restaurant_wa_send,
+    )
+    ctx = SimpleNamespace(
+        recipient="447000000001", wa_client=object(), restaurant_selection=SELECTION
+    )
+
+    command = await selection_required_block(ctx, "tc-1")
+
+    assert sent == {"recipient": "447000000001", "selection": SELECTION}
+    assert command.goto == END
+    assert command.graph is None
+    assert command.update["messages"][0].tool_call_id == "tc-1"
+    assert "no restaurant has been selected" in command.update["messages"][0].content
+    assert "/DoNotRespond:" in command.update["messages"][1].content
+    assert (
+        route_after_agent(
+            {"messages": command.update["messages"], "active_agent": "triage_agent"}
+        )
+        == "__end__"
+    )
 
 
 @pytest.mark.asyncio
-async def test_transfer_to_dinein_declines_a_brand_selected_via_enquiry_row():
-    """A "Book a table" enquiry row keeps active_agent="triage_agent" and
-    lets triage's LLM call the real, guarded transfer_to_dinein (ADR-0023) —
-    it never sets active_agent="dinein_agent" directly, which would bypass
-    every guard. `_run_selected_enquiry` merges only {"rest_ref",
-    "active_agent"} into state, so seed `selected_rest_ref` exactly as that
-    merge would leave it (from an earlier turn), then drive the real tool
-    against ELAS's actual choices — CHKS has supports_dine_in=False."""
+async def test_transfer_to_dinein_declines_a_typed_request_for_a_brand_that_excludes_it():
+    """CHKS (Wings and Things) no longer shows "Book a table" in the enquiry
+    menu (ADR-0024, EnquiryOption.only_for_rest_refs), so this guard is now
+    only a typed-intent backstop — a CHKS customer who types "book a table"
+    instead of tapping a menu row. It must respond with a plain string, not a
+    Command: LangChain's tool node wraps a returned string into a ToolMessage
+    and assigns the originating call's tool_call_id itself, which is what
+    keeps the checkpointed tail correctly paired without a Command.PARENT
+    redirect."""
     from restaurant_agent_runtime.rest_agent.agents.agent_harness import (
         transfer_to_dinein,
     )
@@ -135,11 +161,10 @@ async def test_transfer_to_dinein_declines_a_brand_selected_via_enquiry_row():
         ),
     )
 
-    command = await transfer_to_dinein(runtime)
+    result = await transfer_to_dinein(runtime)
 
-    assert command.goto == "triage_agent"
-    assert command.update["active_agent"] == "triage_agent"
-    assert "does not offer dine-in" in command.update["messages"][1].content
+    assert isinstance(result, str)
+    assert "does not offer dine-in" in result
 
 
 @pytest.mark.asyncio
@@ -171,10 +196,20 @@ class FakeOperationalLookups:
 
 
 @pytest.mark.asyncio
-async def test_route_tool_service_selection_blocks_pending_selection():
+async def test_route_tool_service_selection_blocks_pending_selection(monkeypatch):
+    sent = {}
+
+    async def fake_select_restaurant_wa_send(*, recipient, wa_client, selection):
+        sent["recipient"] = recipient
+
+    monkeypatch.setattr(
+        "restaurant_agent_runtime.rest_agent.agent_wa_senders.select_restaurant_wa_send",
+        fake_select_restaurant_wa_send,
+    )
     runtime = SimpleNamespace(
         context=SimpleNamespace(
             recipient="447000000001",
+            wa_client=object(),
             restaurant_selection=SELECTION,
             operational_lookups=FakeOperationalLookups(),
         )
@@ -185,8 +220,9 @@ async def test_route_tool_service_selection_blocks_pending_selection():
         tool_call_id="tc-1",
         runtime=runtime,
     )
-    assert command.goto == "triage_agent"
-    assert command.graph == command.PARENT
+    assert sent == {"recipient": "447000000001"}
+    assert command.goto == END
+    assert command.graph is None
 
 
 @pytest.mark.asyncio

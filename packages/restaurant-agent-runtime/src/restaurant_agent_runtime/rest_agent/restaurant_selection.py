@@ -16,7 +16,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from langchain_core.messages import SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, ToolMessage
+from langgraph.graph import END
 from langgraph.types import Command
 
 from restaurant_agent_runtime.runtime import RestaurantChoice, RestaurantSelection
@@ -130,17 +131,32 @@ def dinein_available(
     return True
 
 
-def selection_required_block(tool_call_id: str) -> Command:
-    """Redirect a specialist transfer back to triage when no restaurant is chosen yet.
+async def selection_required_block(ctx: Any, tool_call_id: str) -> Command:
+    """Block a specialist transfer and ask which restaurant the customer means.
 
-    Mirrors the shape of `transfer_to_triage`'s parent-graph handoff so every
-    gate that blocks on a pending selection behaves identically.
+    Sends the same restaurant-selection buttons as `ask_user_to_select_restaurant`
+    directly, ending the current node's own turn (`goto=END`), rather than
+    redirecting through a parent-graph `Command` plus a `SystemMessage`
+    instruction for the model to call that tool itself. A tool that crosses
+    back out to `Command.PARENT` while the model's own tool-call message is
+    still pending can leave the checkpointed message tail out of order (the
+    redirect lands before its own `ToolMessage`), which the runtime's
+    tail-repair logic misreads as a genuinely missing tool response. Mirrors
+    `ask_user_to_select_restaurant` and `retained_handoff_block`, both of
+    which use this same shape in production.
     """
+    from restaurant_agent_runtime.rest_agent.agent_wa_senders import (
+        select_restaurant_wa_send,
+    )
+
+    await select_restaurant_wa_send(
+        recipient=ctx.recipient,
+        wa_client=ctx.wa_client,
+        selection=ctx.restaurant_selection,
+    )
     return Command(
-        graph=Command.PARENT,
-        goto="triage_agent",
+        goto=END,
         update={
-            "active_agent": "triage_agent",
             "messages": [
                 ToolMessage(
                     content=(
@@ -148,44 +164,7 @@ def selection_required_block(tool_call_id: str) -> Command:
                     ),
                     tool_call_id=tool_call_id,
                 ),
-                SystemMessage(
-                    content=(
-                        "Restaurant not selected. Call tool "
-                        "`ask_user_to_select_restaurant`."
-                    )
-                ),
-            ],
-        },
-    )
-
-
-def dinein_unsupported_block(tool_call_id: str) -> Command:
-    """Redirect a dine-in transfer back to triage for a takeaway-only choice.
-
-    Used when the customer's selected `RestaurantChoice.supports_dine_in` is
-    `False`, so triage can explain the restriction instead of the transfer
-    silently succeeding into a node that has no data to help them.
-    """
-    return Command(
-        graph=Command.PARENT,
-        goto="triage_agent",
-        update={
-            "active_agent": "triage_agent",
-            "messages": [
-                ToolMessage(
-                    content=(
-                        "Transfer redirected: this restaurant does not offer "
-                        "dine-in reservations."
-                    ),
-                    tool_call_id=tool_call_id,
-                ),
-                SystemMessage(
-                    content=(
-                        "The selected restaurant does not offer dine-in "
-                        "reservations. Tell the customer politely and offer "
-                        "delivery or takeaway instead."
-                    )
-                ),
+                AIMessage("/DoNotRespond: Please select a restaurant."),
             ],
         },
     )
@@ -202,5 +181,4 @@ __all__ = [
     "resolve_takeaway_button_label",
     "dinein_available",
     "selection_required_block",
-    "dinein_unsupported_block",
 ]

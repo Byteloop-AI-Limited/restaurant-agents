@@ -140,21 +140,26 @@ are complete. The following work is intentionally deferred.
   to fix — the other two service-button call sites
   (`triage._send_service_selection`, `select_restaurant_handler`) do pass
   it correctly.
-- [ ] "Book a table" (ELAS enquiry menu, ADR-0023) is the first enquiry
-  option whose fulfilment requires a handoff to a different graph node —
-  the other three (feedback, parking, offers) are all satisfied by tools
-  already bound to triage. The option deliberately keeps
-  `active_agent="triage_agent"` and relies on triage's LLM to call the real,
-  guarded `transfer_to_dinein` tool. This repo has a documented production
-  case of a similar system-message instruction not being reliably followed
-  (`select_restaurant_handler`'s docstring, on_callback_handler.py). The
-  failure mode here is degraded (triage prose-answers instead of
-  transferring), not looping — the existing anti-loop `SystemMessage` in
-  `_run_selected_enquiry` prevents re-showing the menu — but if this is
-  observed in real conversations, escalate to a deterministic transfer
-  (mirroring `select_restaurant_handler`'s pattern: write state and call
-  `transfer_to_dinein`'s logic directly from the callback handler, bypassing
-  the model for this one option) rather than tightening the prompt further.
+- [x] "Book a table" (ELAS enquiry menu, ADR-0023) was the first enquiry
+  option whose fulfilment required a handoff to a different graph node. The
+  risk noted here anticipated a *degraded* failure (triage prose-answering
+  instead of transferring); what actually happened in production
+  (2026-08-18) was a hard crash — `InvalidUpdateError: Node toolNode does
+  not exist` — the first time a CHKS/Wings and Things customer
+  (`supports_dine_in=False`) tapped it. Root cause was not the prompt:
+  `dinein_unsupported_block` (and, identically, `selection_required_block`)
+  redirected via `Command(graph=Command.PARENT, goto="triage_agent",
+  update={"messages": [ToolMessage(...), SystemMessage(...)]})`, re-entering
+  the same node that made the pending tool call; the persisted tail came
+  back with the `SystemMessage` ordered before its `ToolMessage`, which
+  `agent_runner.py`'s tail-repair logic misread as a missing tool response
+  and then crashed trying to fix it via a hardcoded, nonexistent
+  `as_node="toolNode"`. Resolved by ADR-0024: the enquiry row is now hidden
+  for Wings and Things entirely (`EnquiryOption.only_for_rest_refs`) rather
+  than shown-and-declined, and the guard shape is fixed everywhere it
+  appears — a blocked transfer answers its own tool call and ends its own
+  node's turn, never `Command.PARENT` back into the calling node. Also fixed
+  the hardcoded `as_node="toolNode"` in `agent_runner.py`.
 
 The detailed rationale and source references remain in
 `docs/architecture/shared-agent-runtime-decisions.md`.

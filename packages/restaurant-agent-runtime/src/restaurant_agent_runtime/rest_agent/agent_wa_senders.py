@@ -176,15 +176,23 @@ async def select_enquiry_wa_send(
     rest_ref: str,
     *,
     menu: EnquiryMenu,
+    selected_rest_ref: str | None = None,
 ) -> None:
-    """Send the app-owned enquiry choices as a WhatsApp SectionList (up to ten rows)."""
+    """Send the app-owned enquiry choices as a WhatsApp SectionList (up to ten rows).
+
+    `rest_ref` is the invariant app identity used in the callback payload.
+    `selected_rest_ref` is the customer's chosen brand (for a multi-restaurant
+    app) and only affects which rows are visible — see
+    `EnquiryMenu.visible_options_for`. A single-restaurant app never passes
+    it, so every option (none of which sets `only_for_rest_refs`) renders.
+    """
     rows = [
         SectionRow(
             title=option.title,
             callback_data=build_enquiry_callback_data(rest_ref, option),
             description=option.description,
         )
-        for option in menu.options
+        for option in menu.visible_options_for(selected_rest_ref)
     ]
     await wa_client.send_message(
         to=recipient,

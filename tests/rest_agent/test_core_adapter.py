@@ -342,7 +342,7 @@ async def test_malformed_tool_call_repair_removes_the_persisted_tail(core_runner
     )
 
     assert repaired is True
-    assert updates[0]["as_node"] == "toolNode"
+    assert "as_node" not in updates[0]
     assert [message.id for message in updates[0]["values"]["messages"]] == [
         "orphan-tool",
         "later-message",
