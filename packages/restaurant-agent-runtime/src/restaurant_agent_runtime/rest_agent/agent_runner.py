@@ -331,6 +331,9 @@ async def run_rest_graph_with_custom_msg(
         else:
             customer_address = customer_master.model_dump()
 
+        # This is the first write for a genuinely new thread (no prior
+        # checkpoint), so LangGraph has no last-writer to infer as_node
+        # from — see the comment near the other aupdate_state calls below.
         await graph.aupdate_state(
             config=config,
             values={
@@ -346,6 +349,7 @@ async def run_rest_graph_with_custom_msg(
                     )
                 ],
             },
+            as_node="triage_agent",
         )
 
     # which ever msg is not None, for a list of msgs.
@@ -373,13 +377,20 @@ async def run_rest_graph_with_custom_msg(
                 *msgs,
             ]
         if persisted_update:
-            await graph.aupdate_state(config, persisted_update)
+            # `as_node` is required, not optional, here: on a brand-new
+            # thread (no prior checkpoint) LangGraph has no last-writer to
+            # infer from and raises "Ambiguous update, specify as_node"
+            # rather than silently picking one. Every conversation routes to
+            # triage_agent by default (route_initial's own fallback), and no
+            # node has actually executed yet for this callback-originated
+            # write, so it is the correct anchor regardless of which
+            # active_agent the update itself sets.
+            await graph.aupdate_state(config, persisted_update, as_node="triage_agent")
         return None
 
     # Update state if updates provided
     if state_update_dict:
-        # await graph.aupdate_state(config, state_update_dict, as_node="toolNode")
-        await graph.aupdate_state(config, state_update_dict)
+        await graph.aupdate_state(config, state_update_dict, as_node="triage_agent")
 
     await _repair_malformed_tool_call_tail(graph=graph, config=config)
 

@@ -458,7 +458,11 @@ async def test_tool_protocol_error_repairs_and_retries_once(core_runner, monkeyp
 async def test_persist_only_updates_state_without_invoking_the_model(core_runner):
     updates = []
     graph = SimpleNamespace(
-        aupdate_state=AsyncMock(side_effect=lambda config, values: updates.append((config, values)))
+        aupdate_state=AsyncMock(
+            side_effect=lambda config, values, **kwargs: updates.append(
+                (config, values, kwargs.get("as_node"))
+            )
+        )
     )
     core_runner.AsyncPostgresSaver = lambda _pool: object()
     core_runner.get_config_for_recipient = AsyncMock(
@@ -488,6 +492,7 @@ async def test_persist_only_updates_state_without_invoking_the_model(core_runner
                 "active_agent": "takeaway_agent",
                 "messages": [HumanMessage("I want takeaway")],
             },
+            "triage_agent",
         )
     ]
 
