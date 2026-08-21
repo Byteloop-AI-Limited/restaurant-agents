@@ -90,7 +90,7 @@ def _settings(identity: RestaurantIdentity) -> RestaurantSettingsBundle:
     )
 
 
-def _build_test_app(identity: RestaurantIdentity):
+def _build_test_app(identity: RestaurantIdentity, *, register_whatsapp_handlers: bool = False):
     created = {}
 
     def async_factory(waba, app):
@@ -119,7 +119,7 @@ def _build_test_app(identity: RestaurantIdentity):
         settings_loader=_settings,
         async_wa_factory=async_factory,
         sync_wa_factory=sync_factory,
-        register_whatsapp_handlers=False,
+        register_whatsapp_handlers=register_whatsapp_handlers,
         include_order_router=False,
         include_rider_router=False,
         include_thread_router=True,
@@ -150,6 +150,34 @@ def test_two_apps_keep_exact_clients_and_identities_isolated():
         }
 
 
+def test_select_enquiry_registers_both_a_button_and_a_selection_handler():
+    """/SelectEnquiry now arrives as either a CallbackButton (menus already
+    delivered before this release) or a CallbackSelection (new SectionList
+    rows, ADR-0023). Both handler types must be registered and both must
+    actually match a real update — asserting the handler object exists is
+    not enough, since CallbackButtonHandler silently never fires for a
+    CallbackSelection update."""
+    from pywa.handlers import CallbackButtonHandler, CallbackSelectionHandler
+
+    app, created = _build_test_app(
+        RestaurantIdentity("BNAT", "bnat"), register_whatsapp_handlers=True
+    )
+    handlers = created["async_client"].handlers
+
+    button_handlers = [h for h in handlers if isinstance(h, CallbackButtonHandler)]
+    selection_handlers = [h for h in handlers if isinstance(h, CallbackSelectionHandler)]
+
+    button_update = SimpleNamespace(
+        data='{"action":"/SelectEnquiry","rest_ref":"bnat"}', _txt_fields=("data",)
+    )
+    selection_update = SimpleNamespace(
+        data='{"action":"/SelectEnquiry","rest_ref":"bnat"}', _txt_fields=("data",)
+    )
+
+    assert any(h.check(None, button_update) for h in button_handlers)
+    assert any(h.check(None, selection_update) for h in selection_handlers)
+
+
 @pytest.mark.parametrize(
     ("rest_ref", "namespace"),
     [("BNAT", "bnat"), ("SFCS", "sfcs")],
@@ -178,7 +206,7 @@ def test_details_exposes_selected_runtime_identity_without_raw_secrets(
         "app_id": f"{namespace}-app",
         "token_hint": "****cret",
         "app_secret_hint": "****cret",
-        "validate_updates": True,
+        "validate_updates": False,
         "display_number": f"+44-{namespace}",
         "admins": [f"{rest_ref}-admin"],
         "service_hours": {"monday": [["10:00", "22:00"]]},
@@ -289,7 +317,8 @@ def test_waba_namespace_has_no_fallback():
         WabaBusinessSettings.for_namespace("bnat", values)
 
 
-def test_async_waba_client_enables_signature_validation(monkeypatch):
+def test_async_waba_client_disables_signature_validation(monkeypatch):
+    """Signature validation is intentionally off for every app; see ADR-0022."""
     captured = {}
 
     class FakeWhatsApp:
@@ -304,7 +333,7 @@ def test_async_waba_client_enables_signature_validation(monkeypatch):
     settings.create_async_client(server=server)
 
     assert captured["server"] is server
-    assert captured["validate_updates"] is True
+    assert captured["validate_updates"] is False
     assert captured["app_secret"] == "secret"
     assert captured["phone_id"] == 123
 
@@ -327,14 +356,20 @@ def test_sync_waba_client_uses_waba_account_id(monkeypatch):
 
 def test_app_packages_do_not_import_each_other_or_global_wa_clients():
     repo_root = Path(__file__).resolve().parents[1]
-    sfcs_source = "\n".join(
-        path.read_text()
-        for path in (repo_root / "apps/sfcs/src/sfcs_agent").rglob("*.py")
-    )
-    bnat_source = "\n".join(
-        path.read_text()
-        for path in (repo_root / "apps/bnat/src/bnat_agent").rglob("*.py")
-    )
+    app_sources = {
+        "sfcs": "\n".join(
+            path.read_text()
+            for path in (repo_root / "apps/sfcs/src/sfcs_agent").rglob("*.py")
+        ),
+        "bnat": "\n".join(
+            path.read_text()
+            for path in (repo_root / "apps/bnat/src/bnat_agent").rglob("*.py")
+        ),
+        "elas": "\n".join(
+            path.read_text()
+            for path in (repo_root / "apps/elas/src/elas_agent").rglob("*.py")
+        ),
+    }
     core_source = "\n".join(
         path.read_text()
         for path in (
@@ -342,7 +377,11 @@ def test_app_packages_do_not_import_each_other_or_global_wa_clients():
         ).rglob("*.py")
     )
 
-    assert "from bnat_agent" not in sfcs_source
-    assert "from sfcs_agent" not in bnat_source
+    package_names = {"sfcs": "sfcs_agent", "bnat": "bnat_agent", "elas": "elas_agent"}
+    for app, source in app_sources.items():
+        for other_app, package_name in package_names.items():
+            if other_app == app:
+                continue
+            assert f"from {package_name}" not in source
     for forbidden in ("_async_wa_client", "_sync_wa_client", "waba_business_settings"):
         assert forbidden not in core_source

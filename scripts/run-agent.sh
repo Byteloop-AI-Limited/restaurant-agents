@@ -6,7 +6,7 @@ envLoad() {
 }
 
 usage() {
-    echo "Usage: $0 --app {bnat|sfcs}" >&2
+    echo "Usage: $0 --app {bnat|sfcs|elas}" >&2
 }
 
 if [ "$#" -ne 2 ] || [ "$1" != "--app" ]; then
@@ -22,6 +22,10 @@ case "$2" in
     sfcs)
         app_package="sfcs-agent"
         app_module="sfcs_agent.main:app"
+        ;;
+    elas)
+        app_package="elas-agent"
+        app_module="elas_agent.main:app"
         ;;
     *)
         usage

@@ -10,6 +10,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 APP_REST_AGENT_DIRS = (
     ("sfcs", REPO_ROOT / "apps/sfcs/src/sfcs_agent/rest_agent"),
     ("bnat", REPO_ROOT / "apps/bnat/src/bnat_agent/rest_agent"),
+    ("elas", REPO_ROOT / "apps/elas/src/elas_agent/rest_agent"),
 )
 AGENT_IMPLEMENTATIONS = (
     (
@@ -93,52 +94,50 @@ def _assigned_name_list(tree: ast.Module, variable: str) -> tuple[str, ...]:
     raise AssertionError(f"could not find list assignment for {variable}")
 
 
-def _build_graph_function(tree: ast.Module) -> ast.FunctionDef:
-    functions = (
-        node
-        for node in tree.body
-        if isinstance(node, ast.FunctionDef) and node.name == "build_multi_agent_graph"
+def test_production_graph_has_the_standard_nodes_and_routes():
+    """Characterize the graph shape via the real builder, not source text.
+
+    `build_multi_agent_graph` gained an optional `dinein_agent_node` argument
+    (config-gated on an app supplying a dine-in prompt). AST parsing of the
+    function body can no longer distinguish "the unconditional baseline" from
+    "the dine-in-configured graph", since both come from the same source with
+    a runtime branch — so this test builds the real StateGraph both ways and
+    inspects the constructed object, which is what actually determines
+    behavior for every app.
+    """
+    from langchain_core.messages import AIMessage
+    from restaurant_agent_runtime.rest_agent.agents.multi_agent import (
+        DINEIN_AGENT,
+        build_multi_agent_graph,
+        route_after_agent,
+        route_initial,
     )
-    return next(functions)
 
+    def _node(_state):
+        return _state
 
-def _builder_calls(function: ast.FunctionDef, method: str) -> list[ast.Call]:
-    calls = [
-        node
-        for node in ast.walk(function)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and node.func.attr == method
-    ]
-    return sorted(calls, key=lambda call: call.lineno)
+    baseline = build_multi_agent_graph(_node, _node, _node)
+    assert set(baseline.nodes.keys()) == set(STANDARD_AGENTS)
 
+    with_dinein = build_multi_agent_graph(_node, _node, _node, dinein_agent_node=_node)
+    assert set(with_dinein.nodes.keys()) == set(STANDARD_AGENTS) | {DINEIN_AGENT}
 
-@pytest.mark.parametrize(("app_name", "agent_dir"), AGENT_IMPLEMENTATIONS)
-def test_production_graph_has_the_standard_nodes_and_routes(app_name, agent_dir):
-    tree = _parse(agent_dir / "multi_agent.py")
-    build_graph = _build_graph_function(tree)
+    # Every app, configured or not, still defaults to triage and still ends
+    # on a final AIMessage without tool calls.
+    assert route_initial({}) == "triage_agent"
+    assert route_initial({"active_agent": "delivery_agent"}) == "delivery_agent"
+    assert route_after_agent({"messages": [AIMessage("done")]}) == "__end__"
 
-    nodes = tuple(
-        _expression_name(call.args[0])
-        for call in _builder_calls(build_graph, "add_node")
-    )
-    assert nodes == STANDARD_AGENTS, app_name
-
-    routes = tuple(
-        (
-            _expression_name(call.args[0]),
-            _expression_name(call.args[1]),
-            tuple(_expression_name(item) for item in call.args[2].elts),
+    # dinein_agent is unreachable unless the app explicitly widens valid_agents
+    # (mirroring what `_build_graph` does only when `prompts.dinein` is set).
+    assert route_initial({"active_agent": DINEIN_AGENT}) == "triage_agent"
+    assert (
+        route_initial(
+            {"active_agent": DINEIN_AGENT},
+            valid_agents=frozenset({*STANDARD_AGENTS, DINEIN_AGENT}),
         )
-        for call in _builder_calls(build_graph, "add_conditional_edges")
+        == DINEIN_AGENT
     )
-    specialist_destinations = (*STANDARD_AGENTS, "END")
-    assert routes == (
-        ("START", "route_initial", STANDARD_AGENTS),
-        ("triage_agent", "route_after_agent", specialist_destinations),
-        ("delivery_agent", "route_after_agent", specialist_destinations),
-        ("takeaway_agent", "route_after_agent", specialist_destinations),
-    ), app_name
 
 
 @pytest.mark.parametrize(("app_name", "agent_dir"), AGENT_IMPLEMENTATIONS)

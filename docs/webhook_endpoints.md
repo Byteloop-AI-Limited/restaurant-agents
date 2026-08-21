@@ -11,6 +11,7 @@ routes validate the path against the running `RestaurantIdentity` and return
 - [Order events](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/watomation/routers/order_event_hooks.py)
 - [Rider events](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/watomation/routers/rider_event_hooks.py)
 - [Thread lifecycle and operations](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/watomation/routers/thread_hooks.py)
+- [Reservation events (optional, dine-in apps only)](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/watomation/routers/reservation_hooks.py)
 - [WhatsApp message handlers](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/watomation/on_message_graph_handler.py)
 - [WhatsApp callback handlers](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/watomation/on_callback_handler.py)
 
@@ -23,6 +24,9 @@ graph adapter on `app.state`. It conditionally includes these router groups:
 - `/order-event-hooks`
 - `/rider-event-hooks`
 - `/thread-hooks`
+- `/reservation-hooks` — `include_reservation_router=True`, opt-in and off by
+  default; only an app that supplies `RestaurantPrompts.dinein` mounts this
+  (ADR-0021). ELAS is the first and currently only app that does.
 
 The top-level operational endpoints are `GET /healthz`, `GET /identity`,
 `GET /details`, `GET /internal/activity`, and `POST /internal/cache/reset`.
@@ -56,7 +60,53 @@ this order:
 ADR-0012 restores `/paid3100`; `/test` and `/test-t` remain removed.
 
 Callback registration covers delivery-address confirmation, collection-ready,
-Restaurant-order confirmation, service selection, and marketing consent.
+Restaurant-order confirmation, service selection, enquiry selection, and
+marketing consent. `/SelectRestaurant` is registered only when the app
+configures `RestaurantPresentation.restaurant_selection` (ADR-0020); it is
+absent for SFCS and BNAT. `/SelectEnquiry` registers **both** a
+`CallbackButtonHandler` and a `CallbackSelectionHandler` (ADR-0023): the
+enquiry menu renders as a WhatsApp SectionList, whose row taps arrive as a
+`CallbackSelection` update, not `CallbackButton` — the button handler is
+kept only so menus already delivered to a live chat before a release still
+work.
+
+## Callback Button and List-Row Title Length
+
+Every WhatsApp interactive **button** title Meta accepts is capped at **20
+characters**; a **SectionList row** title is capped at **24**, its optional
+description at **72**, and its `callback_data` at **200** (looser than a
+button's 256). A longer value is rejected by the WhatsApp API at send time —
+or, for `callback_data`, pywa does not validate the length client-side at
+all, so an over-length payload fails silently at Meta only for the customer
+who taps that specific row. This applies to every app-owned title/label
+surface in the shared runtime:
+
+- `RestaurantPresentation.delivery_button_label` /
+  `.takeaway_button_label` / `.enquiry_button_label` — the three
+  service-selection buttons ("How can I help you today?").
+- `RestaurantChoice.delivery_button_label` / `.takeaway_button_label` — a
+  per-brand override of the first two for a multi-restaurant app (ADR-0020);
+  `None` (the default) falls back to `RestaurantPresentation`'s value.
+  `enquiry_button_label` has no per-brand override.
+- `RestaurantChoice.title` — the restaurant-selection buttons (Elai / Wings
+  and Things).
+- `EnquiryMenu.button_title` — the SectionList opener button and its single
+  `Section`'s title (both ≤20).
+- `EnquiryOption.title` / `.description` — one SectionList row (≤24 / ≤72).
+- `EnquiryOption.human_message` — capped at **100** characters, well inside
+  the 200-char `callback_data` budget (the `/SelectEnquiry` JSON envelope
+  measures 90 chars with a 4-char `rest_ref`). This is the cap that actually
+  protects `callback_data`, since pywa does not.
+
+All of the above are validated in `__post_init__` at config-construction
+time (`RestaurantPresentation`, `RestaurantChoice`, `EnquiryOption`,
+`EnquiryMenu` in `runtime.py`), so a too-long value fails app startup with a
+`ValueError` rather than failing silently or erroring only when a customer
+happens to trigger that specific button or row. When embedding a discount in
+a button label (for example `"Delivery (20% off)"`), count the full
+rendered string, including the percentage and parentheses —
+`"Collection (15% off)"` is exactly 20 characters, the maximum that still
+fits a button.
 
 ## Order Event Routes
 
@@ -111,6 +161,17 @@ rejected request apart from an accepted one it failed to deliver.
   operations.
 - `POST /hil-system-message` performs an operator-requested graph intervention
   and resolves a missing recipient through the exact runtime database client.
+
+## Reservation Routes (Optional, Dine-in Apps Only)
+
+Mounted only when `include_reservation_router=True` (ADR-0021):
+
+- `POST /{rest_ref}/reservation-form-submitted` sends the initial reservation
+  acknowledgement once the external reservation service records a booking.
+- `GET /{rest_ref}/reservation-confirmed/{reservation_id}` and
+  `GET /{rest_ref}/reservation-declined/{reservation_id}` send the
+  corresponding customer notification. Both validate the reservation ID's
+  `rest_ref` prefix against the URL's `rest_ref` before sending.
 
 ## Activity Endpoint
 

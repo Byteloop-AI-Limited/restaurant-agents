@@ -46,6 +46,7 @@ def core_runner(monkeypatch):
         return SimpleNamespace(nodes=nodes, compile=lambda **_: None)
 
     multi_agent.build_multi_agent_graph = build_multi_agent_graph
+    multi_agent.DINEIN_AGENT = "dinein_agent"
 
     harness = ModuleType("restaurant_agent_runtime.rest_agent.agents.agent_harness")
     harness.ContextSchema = object
@@ -87,6 +88,11 @@ def core_runner(monkeypatch):
                 "build_delivery_agent",
                 "delivery_agent",
             ),
+            "restaurant_agent_runtime.rest_agent.agents.dine_in": agent_module(
+                "restaurant_agent_runtime.rest_agent.agents.dine_in",
+                "build_dinein_agent",
+                "dinein_agent",
+            ),
             "restaurant_agent_runtime.rest_agent.agents.multi_agent": multi_agent,
             "restaurant_agent_runtime.rest_agent.agents.takeaway": agent_module(
                 "restaurant_agent_runtime.rest_agent.agents.takeaway",
@@ -118,11 +124,14 @@ def core_runner(monkeypatch):
     return module
 
 
-def _runtime(model):
+def _runtime(model, *, reservation_base_url=None):
     return SimpleNamespace(
         settings=SimpleNamespace(
             llm=SimpleNamespace(llm_client_single_tool_turn=model)
-        )
+        ),
+        presentation=SimpleNamespace(
+            restaurant_selection=None, reservation_base_url=reservation_base_url
+        ),
     )
 
 
@@ -166,16 +175,20 @@ def test_adapter_builds_standard_agents_once_with_runtime_model(core_runner):
             "model": model,
             "system_prompt": "triage",
             "extra_tools": [custom_tool],
+            "restaurant_selection": None,
+            "dinein_enabled": False,
         },
         "delivery_agent": {
             "model": model,
             "system_prompt": "delivery",
             "extra_tools": (),
+            "dinein_enabled": False,
         },
         "takeaway_agent": {
             "model": model,
             "system_prompt": "takeaway",
             "extra_tools": (),
+            "dinein_enabled": False,
         },
     }
 
@@ -218,6 +231,27 @@ def test_adapter_rejects_invalid_customization(core_runner, kwargs, match):
             prompts=RestaurantPrompts("triage", "delivery", "takeaway"),
             **kwargs,
         )
+
+
+def test_adapter_rejects_dinein_prompt_without_reservation_base_url(core_runner):
+    prompts = RestaurantPrompts("triage", "delivery", "takeaway", dinein="dinein")
+
+    with pytest.raises(ValueError, match="reservation_base_url"):
+        core_runner.RestaurantGraphAdapter(
+            _runtime(object(), reservation_base_url=None),
+            prompts=prompts,
+        )
+
+
+def test_adapter_accepts_dinein_prompt_with_reservation_base_url(core_runner):
+    prompts = RestaurantPrompts("triage", "delivery", "takeaway", dinein="dinein")
+
+    adapter = core_runner.RestaurantGraphAdapter(
+        _runtime(object(), reservation_base_url="https://example.test"),
+        prompts=prompts,
+    )
+
+    assert isinstance(adapter, GraphAdapter)
 
 
 def test_malformed_tool_call_detection_finds_missing_response(core_runner):
@@ -308,7 +342,7 @@ async def test_malformed_tool_call_repair_removes_the_persisted_tail(core_runner
     )
 
     assert repaired is True
-    assert updates[0]["as_node"] == "toolNode"
+    assert "as_node" not in updates[0]
     assert [message.id for message in updates[0]["values"]["messages"]] == [
         "orphan-tool",
         "later-message",
@@ -388,7 +422,12 @@ async def test_tool_protocol_error_repairs_and_retries_once(core_runner, monkeyp
             contact_phone=None,
             delivery_button_label="Delivery",
             takeaway_button_label="Collection",
+            enquiry_button_label="More options",
+            delivery_promo_caption="20% off delivery",
+            takeaway_promo_caption="Get started with your collection order",
             enquiry_menu=object(),
+            restaurant_selection=None,
+            reservation_base_url=None,
         ),
         settings=SimpleNamespace(
             project=object(),
@@ -419,7 +458,11 @@ async def test_tool_protocol_error_repairs_and_retries_once(core_runner, monkeyp
 async def test_persist_only_updates_state_without_invoking_the_model(core_runner):
     updates = []
     graph = SimpleNamespace(
-        aupdate_state=AsyncMock(side_effect=lambda config, values: updates.append((config, values)))
+        aupdate_state=AsyncMock(
+            side_effect=lambda config, values, **kwargs: updates.append(
+                (config, values, kwargs.get("as_node"))
+            )
+        )
     )
     core_runner.AsyncPostgresSaver = lambda _pool: object()
     core_runner.get_config_for_recipient = AsyncMock(
@@ -449,6 +492,7 @@ async def test_persist_only_updates_state_without_invoking_the_model(core_runner
                 "active_agent": "takeaway_agent",
                 "messages": [HumanMessage("I want takeaway")],
             },
+            "triage_agent",
         )
     ]
 

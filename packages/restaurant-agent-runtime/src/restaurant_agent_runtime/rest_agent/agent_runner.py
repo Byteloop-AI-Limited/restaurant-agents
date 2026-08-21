@@ -39,7 +39,11 @@ from restaurant_agent_runtime.config import logger
 from restaurant_agent_runtime.runtime import RestaurantRuntime
 from restaurant_agent_runtime.rest_agent.agents.agent_harness import ContextSchema
 from restaurant_agent_runtime.rest_agent.agents.delivery import build_delivery_agent
-from restaurant_agent_runtime.rest_agent.agents.multi_agent import build_multi_agent_graph
+from restaurant_agent_runtime.rest_agent.agents.dine_in import build_dinein_agent
+from restaurant_agent_runtime.rest_agent.agents.multi_agent import (
+    DINEIN_AGENT,
+    build_multi_agent_graph,
+)
 from restaurant_agent_runtime.rest_agent.agents.takeaway import build_takeaway_agent
 from restaurant_agent_runtime.rest_agent.agents.triage import build_triage_agent
 from restaurant_agent_runtime.rest_agent.prompts import RestaurantPrompts
@@ -59,6 +63,18 @@ STANDARD_AGENT_NAMES = frozenset(
 )
 
 
+def _standard_agent_names(prompts: RestaurantPrompts) -> frozenset[str]:
+    """Return the standard node names valid for this app's prompt configuration.
+
+    `dinein_agent` is only a valid `extra_tools_by_agent` / `agent_overrides`
+    key when the app supplies a dine-in prompt; otherwise it stays an unknown
+    name and raises, exactly like any other unconfigured node would.
+    """
+    if prompts.dinein is not None:
+        return STANDARD_AGENT_NAMES | {DINEIN_AGENT}
+    return STANDARD_AGENT_NAMES
+
+
 def _current_restaurant_master(runtime: RestaurantRuntime):
     """Load the mutable operational record only for a real graph invocation."""
     return runtime.operational_lookups.get_restaurant_master()
@@ -71,12 +87,16 @@ def _build_graph(
     agent_overrides: Mapping[str, Any],
 ):
     model = runtime.settings.llm.llm_client_single_tool_turn
+    dinein_enabled = prompts.dinein is not None
+
     triage_agent = agent_overrides.get("triage_agent")
     if triage_agent is None:
         triage_agent = build_triage_agent(
             model=model,
             system_prompt=prompts.triage,
             extra_tools=extra_tools_by_agent.get("triage_agent", ()),
+            restaurant_selection=runtime.presentation.restaurant_selection,
+            dinein_enabled=dinein_enabled,
         )
 
     delivery_agent = agent_overrides.get("delivery_agent")
@@ -85,6 +105,7 @@ def _build_graph(
             model=model,
             system_prompt=prompts.delivery,
             extra_tools=extra_tools_by_agent.get("delivery_agent", ()),
+            dinein_enabled=dinein_enabled,
         )
 
     takeaway_agent = agent_overrides.get("takeaway_agent")
@@ -93,7 +114,18 @@ def _build_graph(
             model=model,
             system_prompt=prompts.takeaway,
             extra_tools=extra_tools_by_agent.get("takeaway_agent", ()),
+            dinein_enabled=dinein_enabled,
         )
+
+    dinein_agent = None
+    if dinein_enabled:
+        dinein_agent = agent_overrides.get(DINEIN_AGENT)
+        if dinein_agent is None:
+            dinein_agent = build_dinein_agent(
+                model=model,
+                system_prompt=prompts.dinein,
+                extra_tools=extra_tools_by_agent.get(DINEIN_AGENT, ()),
+            )
 
     async def call_triage_agent(state):
         return await triage_agent.ainvoke(state)
@@ -104,10 +136,17 @@ def _build_graph(
     async def call_takeaway_agent(state):
         return await takeaway_agent.ainvoke(state)
 
+    call_dinein_agent = None
+    if dinein_agent is not None:
+
+        async def call_dinein_agent(state):
+            return await dinein_agent.ainvoke(state)
+
     return build_multi_agent_graph(
         triage_agent_node=call_triage_agent,
         delivery_agent_node=call_delivery_agent,
         takeaway_agent_node=call_takeaway_agent,
+        dinein_agent_node=call_dinein_agent,
     )
 
 
@@ -203,10 +242,15 @@ async def _repair_malformed_tool_call_tail(graph, config: dict) -> bool:
         reason=reason,
         tool_call_ids=tool_call_ids,
     )
+    # `as_node` is deliberately omitted: this graph's real nodes are
+    # triage_agent/delivery_agent/takeaway_agent/dinein_agent, none of which
+    # is named "toolNode" (a prior value here, which raised
+    # InvalidUpdateError whenever this repair path actually ran). Omitting it
+    # lets LangGraph infer the last node that wrote state, per aupdate_state's
+    # own contract.
     await graph.aupdate_state(
         config=config,
         values={"messages": messages_to_remove},
-        as_node="toolNode",
     )
     return True
 
@@ -287,6 +331,9 @@ async def run_rest_graph_with_custom_msg(
         else:
             customer_address = customer_master.model_dump()
 
+        # This is the first write for a genuinely new thread (no prior
+        # checkpoint), so LangGraph has no last-writer to infer as_node
+        # from — see the comment near the other aupdate_state calls below.
         await graph.aupdate_state(
             config=config,
             values={
@@ -302,6 +349,7 @@ async def run_rest_graph_with_custom_msg(
                     )
                 ],
             },
+            as_node="triage_agent",
         )
 
     # which ever msg is not None, for a list of msgs.
@@ -329,13 +377,20 @@ async def run_rest_graph_with_custom_msg(
                 *msgs,
             ]
         if persisted_update:
-            await graph.aupdate_state(config, persisted_update)
+            # `as_node` is required, not optional, here: on a brand-new
+            # thread (no prior checkpoint) LangGraph has no last-writer to
+            # infer from and raises "Ambiguous update, specify as_node"
+            # rather than silently picking one. Every conversation routes to
+            # triage_agent by default (route_initial's own fallback), and no
+            # node has actually executed yet for this callback-originated
+            # write, so it is the correct anchor regardless of which
+            # active_agent the update itself sets.
+            await graph.aupdate_state(config, persisted_update, as_node="triage_agent")
         return None
 
     # Update state if updates provided
     if state_update_dict:
-        # await graph.aupdate_state(config, state_update_dict, as_node="toolNode")
-        await graph.aupdate_state(config, state_update_dict)
+        await graph.aupdate_state(config, state_update_dict, as_node="triage_agent")
 
     await _repair_malformed_tool_call_tail(graph=graph, config=config)
 
@@ -350,6 +405,9 @@ async def run_rest_graph_with_custom_msg(
         restaurant_contact_phone=runtime.presentation.contact_phone,
         delivery_button_label=runtime.presentation.delivery_button_label,
         takeaway_button_label=runtime.presentation.takeaway_button_label,
+        enquiry_button_label=runtime.presentation.enquiry_button_label,
+        delivery_promo_caption=runtime.presentation.delivery_promo_caption,
+        takeaway_promo_caption=runtime.presentation.takeaway_promo_caption,
         enquiry_menu=runtime.presentation.enquiry_menu,
         restaurant_master=_current_restaurant_master(runtime),
         project_settings=runtime.settings.project,
@@ -357,6 +415,8 @@ async def run_rest_graph_with_custom_msg(
         client_ordelo=runtime.settings.database_client,
         operational_lookups=runtime.operational_lookups,
         wa_msg_id=wa_msg_id,
+        restaurant_selection=runtime.presentation.restaurant_selection,
+        reservation_base_url=runtime.presentation.reservation_base_url,
     )
 
     try:
@@ -439,15 +499,17 @@ async def debug_state(
     config, _ = await get_config_for_recipient(
         recipient, pool, agent=runtime.identity.rest_ref
     )
+    thread_id = config["configurable"]["thread_id"]
 
     state = await graph.aget_state(config=config)
 
     if full_state:
         return {
+            "thread_id": thread_id,
             **get_state_values(state.values),
             "messages": shorten_state_messages(state.values["messages"]),
         }
-    return get_state_values(state.values)
+    return {"thread_id": thread_id, **get_state_values(state.values)}
 
 
 # %% Debug State
@@ -487,9 +549,17 @@ class RestaurantGraphAdapter:
         extra_tools_by_agent = dict(extra_tools_by_agent or {})
         agent_overrides = dict(agent_overrides or {})
 
+        if prompts.dinein is not None and runtime.presentation.reservation_base_url is None:
+            raise ValueError(
+                "prompts.dinein is configured but "
+                "RestaurantPresentation.reservation_base_url is not set; the "
+                "dinein_agent node and transfer_to_dinein would be reachable "
+                "but every reservation link/status call would fail"
+            )
+
         unknown_names = (
             set(extra_tools_by_agent) | set(agent_overrides)
-        ) - STANDARD_AGENT_NAMES
+        ) - _standard_agent_names(prompts)
         if unknown_names:
             names = ", ".join(sorted(unknown_names))
             raise ValueError(f"unknown standard agent names: {names}")

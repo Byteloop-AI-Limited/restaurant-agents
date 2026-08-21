@@ -31,6 +31,9 @@ Platform-wide terms and authority rules are defined in the
 - [Standard takeaway agent and tools](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agents/takeaway.py)
 - [SFCS prompt recipe](../apps/sfcs/src/sfcs_agent/rest_agent/agent_recipe.py)
 - [BNAT prompt recipe](../apps/bnat/src/bnat_agent/rest_agent/agent_recipe.py)
+- [ELAS prompt recipe (multi-restaurant, dine-in)](../apps/elas/src/elas_agent/rest_agent/agent_recipe.py)
+- [Restaurant-selection projection and gates (ADR-0020)](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/restaurant_selection.py)
+- [Optional standard dine-in agent (ADR-0021)](../packages/restaurant-agent-runtime/src/restaurant_agent_runtime/rest_agent/agents/dine_in.py)
 
 ## Composition Vocabulary for Functional Programmers
 
@@ -73,9 +76,10 @@ app identity.py + app agent_recipe.py
 | --- | --- | --- |
 | Identity, presentation, WABA namespace | Application | `identity.py` |
 | Enquiry menu labels and callback intent | Application | `RestaurantPresentation.enquiry_menu` |
-| Complete triage, delivery, and takeaway prompts | Application | `rest_agent/prompts/*.md` |
+| Restaurant-selection choices (multi-restaurant apps only) | Application | `RestaurantPresentation.restaurant_selection` (ADR-0020) |
+| Complete triage, delivery, and takeaway prompts, plus the optional dine-in prompt | Application | `rest_agent/prompts/*.md` |
 | Prompt and adapter composition | Application | `rest_agent/agent_recipe.py` |
-| Standard graph, state, routing, middleware, and tools | Shared runtime | No app-local copy |
+| Standard graph, state, routing, middleware, and tools, including the optional dine-in node | Shared runtime | No app-local copy |
 | Additional tool on an existing standard node | Application | `extra_tools_by_agent` |
 | Complete replacement for one standard node | Application | `agent_overrides` |
 | Custom callback or API route | Application | Native PyWa handler or FastAPI router |
@@ -142,6 +146,20 @@ existing `GraphAdapterFactory` callable.
 
 ## Standard Nodes and Ordered Tools
 
+The lists below are the unconditional baseline every app gets. Two
+conditional appends exist, each activated only by app config and each
+appended *after* this baseline, never inserted into it:
+
+- `ask_user_to_select_restaurant` and `capture_restaurant_selected` are
+  appended to `triage_agent`'s tools only when the app configures
+  `RestaurantPresentation.restaurant_selection` (ADR-0020).
+- `transfer_to_dinein` is appended to `triage_agent`, `delivery_agent`, and
+  `takeaway_agent`'s tools, and the `dinein_agent` node itself only exists,
+  when the app supplies `RestaurantPrompts.dinein` (ADR-0021).
+
+An app that configures neither (SFCS, BNAT) gets exactly the lists below,
+byte-for-byte.
+
 ### `triage_agent`
 
 1. `send_welcome_message`
@@ -178,8 +196,22 @@ existing `GraphAdapterFactory` callable.
 4. `transfer_to_delivery`
 5. `transfer_to_triage`
 
+### `dinein_agent` (optional standard node, ADR-0021)
+
+Only constructed when `RestaurantPrompts.dinein` is supplied.
+
+1. `get_reservation_link`
+2. `check_reservation_status`
+3. `transfer_to_delivery`
+4. `transfer_to_takeaway`
+5. `transfer_to_triage`
+
 Shared-runtime contract tests own these node names, routes, and ordered tool
-lists. App tests own prompt presence and exact runtime/client composition.
+lists — `tests/rest_agent/test_graph_contract.py` characterizes both the
+unconditional baseline and the two configured variants by constructing the
+real graph and adapter, not by parsing source text, since a runtime config
+branch is no longer visible to static AST parsing. App tests own prompt
+presence and exact runtime/client composition.
 
 For a standalone triage enquiry with no chosen service,
 `ask_user_to_select_service(message_before_selection=...)` sends the complete
@@ -271,6 +303,14 @@ incorrect, the application owns its application factory.
    WhatsApp-client binding plus all three app-owned prompts.
 8. Use extra tools or a named-agent override for compatible variation; use an
    app-owned adapter only for an incompatible graph contract.
+9. Only if the app serves more than one restaurant brand behind one WhatsApp
+   number: configure `RestaurantPresentation.restaurant_selection` and add
+   the app's own `rest_ref` as one of its choices, or `create_restaurant_app`
+   refuses to start (ADR-0020). ELAS is the reference implementation.
+10. Only if the app takes table bookings: add a fourth
+    `dinein_agent_prompt.md`, pass it as `RestaurantPrompts.dinein`, and set
+    `include_reservation_router=True` (ADR-0021). ELAS is the reference
+    implementation.
 
 ## Code References (Machine-Readable)
 
@@ -295,7 +335,7 @@ file: packages/restaurant-agent-runtime/src/restaurant_agent_runtime/runtime.py
 symbol: EnquiryMenu
 feature: shared-multi-agent-orchestration
 description: >
- App-owned bounded WhatsApp enquiry prompt and callback options carried through RestaurantPresentation.
+ App-owned bounded WhatsApp SectionList enquiry prompt and callback options (ADR-0023) carried through RestaurantPresentation.
 ```
 
 ```code-ref
@@ -403,6 +443,15 @@ description: >
 - Missing namespaced WABA values fail startup; there is no cross-app fallback.
 - Invalid or missing `active_agent` values route to `triage_agent`.
 - A final `AIMessage` without tool calls routes to `END`.
+- `restaurant_selection` configured but missing the app's own `rest_ref` among
+  its choices fails application construction with `ValueError`.
+- `selected_rest_ref` is never inferred from `rest_ref`: a fresh thread always
+  seeds `rest_ref` but never `selected_rest_ref`, so a configured selection
+  gate always fires on a new conversation. Releasing a specialist flow
+  (below) never clears `selected_rest_ref`.
+- A `RestaurantChoice` with `supports_dine_in=False` makes `transfer_to_dinein`
+  redirect back to triage with an explanation, even while `dinein_agent` is
+  configured for the app as a whole.
 - `retain_thread=True` adds a current-call system message declaring the active
   delivery or takeaway flow in motion and strictly prohibiting handoff. The
   shared transfer guard remains the deterministic enforcement layer. When

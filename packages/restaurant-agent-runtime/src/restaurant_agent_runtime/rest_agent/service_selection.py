@@ -11,9 +11,20 @@ from langgraph.graph import END
 from langgraph.types import Command
 
 from restaurant_agent_runtime.config import logger
+from restaurant_agent_runtime.rest_agent.agent_wa_senders import (
+    select_restaurant_wa_send,
+)
 from restaurant_agent_runtime.rest_agent.new_order_entry import (
     send_new_order_closed_message,
     send_new_order_menu,
+)
+from restaurant_agent_runtime.rest_agent.restaurant_selection import (
+    resolve_delivery_promo_caption,
+    resolve_menu_logo_url,
+    resolve_menu_rest_ref,
+    resolve_takeaway_promo_caption,
+    selection_pending,
+    selection_required_block,
 )
 from restaurant_agent_runtime.rest_agent.specialist_lifecycle import (
     ServiceKind,
@@ -108,6 +119,8 @@ async def route_tool_service_selection(
 ) -> Command:
     """Apply the same service-selection policy from a graph transfer tool."""
     context = runtime.context
+    if selection_pending(state, context.restaurant_selection):
+        return await selection_required_block(context, tool_call_id)
     disposition = selection_disposition(
         state=state,
         service=service,
@@ -165,12 +178,22 @@ async def route_tool_service_selection(
     result = await send_new_order_menu(
         recipient=context.recipient,
         state=state,
-        rest_ref=state.get("rest_ref") or context.rest_ref,
+        rest_ref=resolve_menu_rest_ref(
+            state, context.restaurant_selection, context.rest_ref
+        ),
         wa_client=context.wa_client,
-        logo_url=context.restaurant_logo_url,
+        logo_url=resolve_menu_logo_url(
+            state, context.restaurant_selection, context.restaurant_logo_url
+        ),
         operational_lookups=context.operational_lookups,
         thread_handler=context.thread_handler,
         order_type="takeaway",
+        delivery_promo_caption=resolve_delivery_promo_caption(
+            state, context.restaurant_selection, context.delivery_promo_caption
+        ),
+        takeaway_promo_caption=resolve_takeaway_promo_caption(
+            state, context.restaurant_selection, context.takeaway_promo_caption
+        ),
         reply_to_message_id=state.get("reply_to_msg_id"),
     )
     if result != "sent":
@@ -225,6 +248,15 @@ async def route_service_selection(
         )
         await graph_adapter.run_rest_graph_with_custom_msg(
             recipient=recipient, msgs=[HumanMessage(human_msg)]
+        )
+        return
+
+    selection = runtime.presentation.restaurant_selection
+    if selection_pending(current_state, selection):
+        await select_restaurant_wa_send(
+            recipient=recipient,
+            wa_client=runtime.async_wa_client,
+            selection=selection,
         )
         return
 
@@ -289,12 +321,24 @@ async def route_service_selection(
     result = await send_new_order_menu(
         recipient=recipient,
         state=state_update,
-        rest_ref=rest_ref or current_state.get("rest_ref") or runtime.identity.rest_ref,
+        # `current_state` (not `state_update`) carries the persisted
+        # `selected_rest_ref`; `new_specialist_flow_state` never sets it.
+        rest_ref=resolve_menu_rest_ref(
+            current_state, selection, runtime.identity.rest_ref
+        ),
         wa_client=runtime.async_wa_client,
-        logo_url=runtime.presentation.logo_url or "",
+        logo_url=resolve_menu_logo_url(
+            current_state, selection, runtime.presentation.logo_url or ""
+        ),
         operational_lookups=runtime.operational_lookups,
         thread_handler=ThreadHandler(pool, agent=runtime.identity.rest_ref),
         order_type="takeaway",
+        delivery_promo_caption=resolve_delivery_promo_caption(
+            current_state, selection, runtime.presentation.delivery_promo_caption
+        ),
+        takeaway_promo_caption=resolve_takeaway_promo_caption(
+            current_state, selection, runtime.presentation.takeaway_promo_caption
+        ),
     )
     marker = {
         "sent": "/DoNotRespond: Please select items from the menu to place your order.",

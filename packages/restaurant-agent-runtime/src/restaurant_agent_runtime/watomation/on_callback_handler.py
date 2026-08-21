@@ -27,14 +27,23 @@ from restaurant_agent_runtime.watomation.dedup import wa_dedup
 
 # %% Define classes
 from pywa.types import CallbackButton
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from restaurant_agent_runtime.services.ordelo_service.datamodels.customer_master_pymodel import (
     UpdateCustRestMapRequest,
 )
 from restaurant_agent_runtime.rest_agent.agent_wa_senders import select_enquiry_wa_send
 from restaurant_agent_runtime.services.ordelo_service.ordelo_service import OrdeloService
 from restaurant_agent_runtime.rest_agent.service_selection import route_service_selection
+from restaurant_agent_runtime.rest_agent.specialist_lifecycle import (
+    retained_completion_first_message,
+    SpecialistFlowView,
+)
 
+# Compatibility only for /SelectService payloads minted before /SelectEnquiry
+# existed. Deliberately fixed to the three original defaults: a new option
+# (e.g. ELAS's "I want to book a table") never existed as a /SelectService
+# payload, so no stale button in any live chat can carry it — it only ever
+# arrives via /SelectEnquiry, which select_enquiry_handler already covers.
 _ENQUIRY_OPTION_MESSAGES = frozenset(
     {
         "I want to share feedback",
@@ -176,11 +185,26 @@ async def select_service_handler(
     # Treat Enquiry as a triage entry point even when a stale service button
     # still carries the delivery/takeaway agent from the preceding turn.
     if callback_data.human_msg == "I have an enquiry":
+        try:
+            current_state = await graph_adapter.debug_state_values(recipient=recipient)
+            selected_rest_ref = current_state.get("selected_rest_ref")
+        except Exception:
+            # Degrade to unrestricted rows only, matching
+            # route_service_selection's precedent for a failed state read on
+            # this same callback boundary — a brand-restricted row simply
+            # stays hidden rather than blocking the whole menu.
+            logger.exception(
+                "Could not inspect selected_rest_ref for recipient {}; "
+                "showing brand-unrestricted enquiry rows only",
+                recipient,
+            )
+            selected_rest_ref = None
         await select_enquiry_wa_send(
             recipient=recipient,
             wa_client=wa,
             rest_ref=rest_ref,
             menu=runtime.presentation.enquiry_menu,
+            selected_rest_ref=selected_rest_ref,
         )
         return
 
@@ -211,15 +235,125 @@ async def select_service_handler(
         return
 
     if rest_ref and not active_agent:
+        # Only enquiry_button_label is passed here: it has no per-brand
+        # override (unlike delivery/takeaway), so the presentation-level
+        # value is its complete answer. delivery_button_label/
+        # takeaway_button_label are pre-existing gaps on this specific
+        # resend path — see docs/to-do.md — not something to "tidy up" here.
         await select_service_sender(
             recipient=recipient,
             wa_client=wa,
             rest_ref=rest_ref,
             operational_lookups=runtime.operational_lookups,
+            enquiry_button_label=runtime.presentation.enquiry_button_label,
         )
         return
 
     logger.error(f"Incomplete callback data for /SelectService: {callback_data_dict}")
+
+
+# %% Restaurant selection handler (multi-restaurant apps only)
+@wa_dedup
+async def select_restaurant_handler(
+    wa: WhatsApp,
+    callback,
+    *,
+    callback_data_type: type,
+    graph_adapter: GraphAdapter,
+    runtime: RestaurantRuntime,
+    select_service_sender: Any,
+):
+    """
+    Handles restaurant selection callback (/SelectRestaurant).
+
+    Updates `selected_rest_ref` in state and deterministically sends the
+    service-selection buttons, matching every other callback-driven state
+    transition in this module (`select_service_handler`,
+    `select_consent_handler`, `select_enquiry_handler`). This step must not be
+    left to the model's tool choice: a system-message instruction asking
+    triage to call `ask_user_to_select_service` is not guaranteed to be
+    followed on every turn, and when it is not, the customer is shown the
+    restaurant-selection buttons again instead — an observed infinite loop.
+    This is the single writer of `selected_rest_ref` from a callback; it never
+    falls back to or rewrites `rest_ref`.
+    """
+    recipient = callback.from_user.wa_id
+    callback_data_dict: dict = json.loads(callback.data)
+
+    try:
+        callback_data = callback_data_type(**callback_data_dict)
+    except Exception as e:
+        logger.error(
+            f"Invalid callback data for /SelectRestaurant: {callback_data_dict}, error: {e}"
+        )
+        return
+
+    selection = runtime.presentation.restaurant_selection
+    if selection is None:
+        logger.error(
+            "Received /SelectRestaurant callback but this app has no "
+            "restaurant_selection configured"
+        )
+        return
+
+    choice = selection.choice_for(callback_data_dict.get("rest_ref"))
+    if choice is None:
+        logger.error(
+            f"Unknown restaurant choice in /SelectRestaurant callback: {callback_data_dict}"
+        )
+        return
+
+    try:
+        current_state = await graph_adapter.debug_state_values(recipient=recipient)
+    except Exception:
+        logger.exception(
+            "Could not inspect state for /SelectRestaurant recipient {}; "
+            "preserving ownership",
+            recipient,
+        )
+        return
+
+    if SpecialistFlowView.from_state(current_state).owns_specialist_work:
+        reply = retained_completion_first_message(current_state)
+        await runtime.async_wa_client.send_message(to=recipient, text=reply)
+        return
+
+    state_update_dict = {
+        "selected_rest_ref": choice.rest_ref,
+        "active_agent": "triage_agent",
+    }
+    await graph_adapter.run_rest_graph_with_custom_msg(
+        recipient=recipient,
+        msgs=[HumanMessage(callback_data.human_msg)],
+        state_update_dict=state_update_dict,
+        persist_only=True,
+    )
+
+    # `choice` was just captured this turn, so it cannot be resolved from
+    # persisted state yet — use its own override directly, matching
+    # `capture_restaurant_selected`'s typed-message equivalent.
+    await select_service_sender(
+        recipient=recipient,
+        wa_client=wa,
+        rest_ref=choice.rest_ref.lower(),
+        operational_lookups=runtime.operational_lookups,
+        delivery_button_label=choice.delivery_button_label
+        or runtime.presentation.delivery_button_label,
+        takeaway_button_label=choice.takeaway_button_label
+        or runtime.presentation.takeaway_button_label,
+        enquiry_button_label=runtime.presentation.enquiry_button_label,
+    )
+
+    await graph_adapter.run_rest_graph_with_custom_msg(
+        recipient=recipient,
+        msgs=[
+            AIMessage(
+                f"/DoNotRespond: {choice.display_name} selected. "
+                "Service selection buttons sent."
+            )
+        ],
+        persist_only=True,
+    )
 
 
 # %% Enquiry selection handler

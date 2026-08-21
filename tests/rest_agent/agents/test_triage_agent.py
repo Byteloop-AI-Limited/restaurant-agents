@@ -8,6 +8,7 @@ from langchain_core.messages import AIMessage
 from langgraph.graph import END
 
 from restaurant_agent_runtime.rest_agent.agents import triage
+from restaurant_agent_runtime.runtime import EnquiryMenu, EnquiryOption
 
 
 def _runtime(*, events: list[tuple[str, dict]], contact_phone: str | None = None):
@@ -22,8 +23,10 @@ def _runtime(*, events: list[tuple[str, dict]], contact_phone: str | None = None
             operational_lookups=object(),
             delivery_button_label="Delivery",
             takeaway_button_label="Collection",
+            enquiry_button_label="More options",
             restaurant_contact_phone=contact_phone,
             client_ordelo=object(),
+            restaurant_selection=None,
         )
     )
 
@@ -60,6 +63,7 @@ async def test_service_selection_sends_answer_before_buttons_and_ends_turn(monke
                 "operational_lookups": ANY,
                 "delivery_button_label": "Delivery",
                 "takeaway_button_label": "Collection",
+                "enquiry_button_label": "More options",
             },
         ),
     ]
@@ -83,6 +87,46 @@ async def test_service_selection_keeps_bare_menu_compatibility(monkeypatch):
     )
 
     assert [event[0] for event in events] == ["service_selection"]
+
+
+@pytest.mark.asyncio
+async def test_ask_user_to_select_enquiry_passes_the_selected_brand(monkeypatch):
+    """The model-invoked enquiry path (secondary to the /SelectService
+    button) must also resolve selected_rest_ref, so both render paths agree
+    on which rows are visible — see ADR-0024."""
+    menu = EnquiryMenu(
+        prompt="What would you like help with?",
+        options=(
+            EnquiryOption("Share feedback", "I want to share feedback"),
+            EnquiryOption(
+                "Book a table", "I want to book a table", only_for_rest_refs=("ELAS",)
+            ),
+        ),
+    )
+    sent = {}
+
+    async def fake_select_enquiry_wa_send(**kwargs):
+        sent.update(kwargs)
+
+    monkeypatch.setattr(triage, "select_enquiry_wa_send", fake_select_enquiry_wa_send)
+    runtime = SimpleNamespace(
+        context=SimpleNamespace(
+            recipient="447000000001",
+            rest_ref="ELAS",
+            wa_client=object(),
+            enquiry_menu=menu,
+        )
+    )
+
+    command = await triage.ask_user_to_select_enquiry.coroutine(
+        state={"rest_ref": "elas", "selected_rest_ref": "CHKS"},
+        tool_call_id="tool-1",
+        runtime=runtime,
+    )
+
+    assert sent["selected_rest_ref"] == "CHKS"
+    assert command.goto == END
+    assert "/DoNotRespond:" in command.update["messages"][-1].content
 
 
 @pytest.mark.asyncio

@@ -10,8 +10,6 @@ The shared state schemas (ContextSchema, AgentState) and transfer tools
 are defined in agent_harness.py to avoid circular imports.
 """
 
-from typing import Literal
-
 from langchain_core.messages import AIMessage
 from langgraph.graph import END, START, StateGraph
 
@@ -20,11 +18,16 @@ from restaurant_agent_runtime.rest_agent.agents.agent_harness import (
     ContextSchema,
 )
 
+STANDARD_AGENTS = ("triage_agent", "delivery_agent", "takeaway_agent")
+DINEIN_AGENT = "dinein_agent"
+
 
 # %% Router functions
 def route_after_agent(
     state: AgentState,
-) -> Literal["triage_agent", "delivery_agent", "takeaway_agent", "__end__"]:
+    *,
+    valid_agents: frozenset[str] = frozenset(STANDARD_AGENTS),
+) -> str:
     """Route based on active_agent, or END if the agent finished without handoff."""
     messages = state.get("messages", [])
 
@@ -36,7 +39,6 @@ def route_after_agent(
 
     # Otherwise route to the active agent, with fallback for invalid values
     active = state.get("active_agent", "triage_agent")
-    valid_agents = {"triage_agent", "delivery_agent", "takeaway_agent"}
     if not active or active not in valid_agents:
         return "triage_agent"
     return active
@@ -44,10 +46,11 @@ def route_after_agent(
 
 def route_initial(
     state: AgentState,
-) -> Literal["triage_agent", "delivery_agent", "takeaway_agent"]:
+    *,
+    valid_agents: frozenset[str] = frozenset(STANDARD_AGENTS),
+) -> str:
     """Route to the active agent based on state, default to triage agent."""
     active = state.get("active_agent") or "triage_agent"
-    valid_agents = {"triage_agent", "delivery_agent", "takeaway_agent"}
     if active not in valid_agents:
         return "triage_agent"
     return active
@@ -58,6 +61,7 @@ def build_multi_agent_graph(
     triage_agent_node,
     delivery_agent_node,
     takeaway_agent_node,
+    dinein_agent_node=None,
 ):
     """Build the multi-agent graph with delivery, takeaway, and triage agents.
 
@@ -65,43 +69,39 @@ def build_multi_agent_graph(
         triage_agent_node: Callable node for triage agent (from triage.py)
         delivery_agent_node: Callable node for delivery agent (from delivery.py)
         takeaway_agent_node: Callable node for takeaway agent (from takeaway.py)
+        dinein_agent_node: Optional callable node for the dine-in agent (from
+            dine_in.py). Only apps that configure a dine-in prompt supply
+            this; every other app gets today's unchanged three-node graph.
 
     Returns:
-        Compiled StateGraph for multi-agent orchestration
+        Uncompiled StateGraph builder for multi-agent orchestration
     """
+    node_names = STANDARD_AGENTS
+    if dinein_agent_node is not None:
+        node_names = (*STANDARD_AGENTS, DINEIN_AGENT)
+    valid_agents = frozenset(node_names)
+
+    def _route_after_agent(state: AgentState) -> str:
+        return route_after_agent(state, valid_agents=valid_agents)
+
+    def _route_initial(state: AgentState) -> str:
+        return route_initial(state, valid_agents=valid_agents)
+
     builder = StateGraph(state_schema=AgentState, context_schema=ContextSchema)
 
     # Add agent nodes
     builder.add_node("triage_agent", triage_agent_node)
     builder.add_node("delivery_agent", delivery_agent_node)
     builder.add_node("takeaway_agent", takeaway_agent_node)
+    if dinein_agent_node is not None:
+        builder.add_node(DINEIN_AGENT, dinein_agent_node)
 
     # Start with conditional routing based on initial active_agent
-    builder.add_conditional_edges(
-        START,
-        route_initial,
-        ["triage_agent", "delivery_agent", "takeaway_agent"],
-    )
+    builder.add_conditional_edges(START, _route_initial, list(node_names))
 
-    # After triage agent, check if we should end or route to another agent
-    builder.add_conditional_edges(
-        "triage_agent",
-        route_after_agent,
-        ["triage_agent", "delivery_agent", "takeaway_agent", END],
-    )
-
-    # After delivery agent, check if we should end or route to another agent
-    builder.add_conditional_edges(
-        "delivery_agent",
-        route_after_agent,
-        ["triage_agent", "delivery_agent", "takeaway_agent", END],
-    )
-
-    # After takeaway agent, check if we should end or route to another agent
-    builder.add_conditional_edges(
-        "takeaway_agent",
-        route_after_agent,
-        ["triage_agent", "delivery_agent", "takeaway_agent", END],
-    )
+    # After each agent, check if we should end or route to another agent
+    destinations = [*node_names, END]
+    for node_name in node_names:
+        builder.add_conditional_edges(node_name, _route_after_agent, destinations)
 
     return builder

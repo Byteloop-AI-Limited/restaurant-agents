@@ -5,6 +5,7 @@ requires-python = "==3.13.*"
 [manifest]
 members = [
     "bnat-agent",
+    "elas-agent",
     "restaurant-agent-runtime",
     "sfcs-agent",
 ]
@@ -231,6 +232,17 @@ sdist = { url = "https://files.pythonhosted.org/packages/fc/f8/98eea607f65de6527
 wheels = [
     { url = "https://files.pythonhosted.org/packages/12/b3/231ffd4ab1fc9d679809f356cebee130ac7daa00d6d6f3206dd4fd137e9e/distro-1.9.0-py3-none-any.whl", hash = "sha256:7bffd925d65168f85027d8da9af6bddab658135b840670a223589bc0c8ef02b2", size = 20277, upload-time = "2023-12-24T09:54:30.421Z" },
 ]
+
+[[package]]
+name = "elas-agent"
+version = "0.1.0"
+source = { editable = "apps/elas" }
+dependencies = [
+    { name = "restaurant-agent-runtime" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "restaurant-agent-runtime", editable = "packages/restaurant-agent-runtime" }]
 
 [[package]]
 name = "fastapi"

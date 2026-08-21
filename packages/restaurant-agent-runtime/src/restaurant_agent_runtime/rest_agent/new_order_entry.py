@@ -59,6 +59,8 @@ async def send_new_order_menu(
     operational_lookups: OperationalLookupCache,
     thread_handler: Any,
     order_type: Literal["delivery", "takeaway"],
+    delivery_promo_caption: str,
+    takeaway_promo_caption: str,
     reply_to_message_id: str | None = None,
 ) -> Literal["sent", "closed", "failed"]:
     """Send a menu through the exact runtime after a final availability check."""
@@ -82,6 +84,8 @@ async def send_new_order_menu(
         wa_client=wa_client,
         logo_url=logo_url,
         operational_lookups=operational_lookups,
+        delivery_promo_caption=delivery_promo_caption,
+        takeaway_promo_caption=takeaway_promo_caption,
     )
     if isinstance(menu_err, ValueError):
         await wa_client.send_message(

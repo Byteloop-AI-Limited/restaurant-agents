@@ -186,6 +186,7 @@ async def test_transfer_to_delivery_blocks_closed_recipient_but_allows_overwatch
             recipient="447000000001",
             operational_lookups=ops,
             wa_client=AsyncMock(),
+            restaurant_selection=None,
         ),
     )
     blocked = await transfer_to_delivery(blocked_runtime)
@@ -204,6 +205,7 @@ async def test_transfer_to_delivery_blocks_closed_recipient_but_allows_overwatch
             recipient="447000000099",
             operational_lookups=ops,
             wa_client=AsyncMock(),
+            restaurant_selection=None,
         ),
     )
     allowed = await transfer_to_delivery(overwatch_runtime)
@@ -225,6 +227,9 @@ async def test_transfer_to_takeaway_blocks_closed_recipient_but_allows_overwatch
             thread_handler=AsyncMock(),
             rest_ref="BNAT",
             restaurant_logo_url="",
+            restaurant_selection=None,
+            delivery_promo_caption="20% off delivery",
+            takeaway_promo_caption="Get started with your collection order",
         ),
     )
     blocked = await transfer_to_takeaway(blocked_state, blocked_runtime)
@@ -242,6 +247,9 @@ async def test_transfer_to_takeaway_blocks_closed_recipient_but_allows_overwatch
             thread_handler=AsyncMock(),
             rest_ref="BNAT",
             restaurant_logo_url="",
+            restaurant_selection=None,
+            delivery_promo_caption="20% off delivery",
+            takeaway_promo_caption="Get started with your collection order",
         ),
     )
     overwatch_runtime.context.thread_handler.get_or_create_thread = AsyncMock(
@@ -274,6 +282,9 @@ async def test_send_restaurant_menu_tool_blocks_closed_recipient_but_allows_over
             thread_handler=thread_handler,
             rest_ref="bnat",
             restaurant_logo_url="",
+            restaurant_selection=None,
+            delivery_promo_caption="20% off delivery",
+            takeaway_promo_caption="Get started with your collection order",
         )
         return SimpleNamespace(context=ctx)
 

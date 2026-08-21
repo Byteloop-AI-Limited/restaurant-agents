@@ -175,6 +175,8 @@ async def send_restaurant_menu_non_carousel(
     wa_client,
     logo_url: str | None,
     operational_lookups,
+    delivery_promo_caption: str,
+    takeaway_promo_caption: str,
 ):
     """
     Send a non-carousel restaurant menu CTA.
@@ -198,10 +200,10 @@ async def send_restaurant_menu_non_carousel(
 
     if rest_menu_params.order_type == "delivery":
         order_button_title = "Order Delivery"
-        caption = "Limited Time Offer - 20% off on all delivery orders"
+        caption = delivery_promo_caption
     else:
         order_button_title = "Order Collection"
-        caption = "Get started with your collection order"
+        caption = takeaway_promo_caption
 
     button = ButtonUrl(title=order_button_title, url=restaurant_url)
     if logo_url:

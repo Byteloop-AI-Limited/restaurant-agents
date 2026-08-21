@@ -18,6 +18,7 @@ update restaurant_master
 -- 447932085625 - bab
 set admins = Array['447919202938', '447932085625', '447936359321'],
     rest_stale_active_threads_minutes = 10,
+    auto_accept = true,
     city='dummy',
     service_hours_json = '{
   "mon": [["18:00", "24:00"]],
@@ -31,7 +32,6 @@ set admins = Array['447919202938', '447932085625', '447936359321'],
 where rest_ref='BNAT';
 
 update ordelo_config set config_value = 'https://rest-agent-test.ordelo.app' where config_key = 'BNAT_APP_URL';
-update ordelo_config set config_value = 'https://bnat-agent.fly.dev' where config_key = 'BNAT_APP_URL';
 
 -- Cache reset calls, Should be run everytime after changing the app URL
 SELECT * FROM ordelo_post('BNAT_APP_URL', '/restaurant-base-url-cache/reset');
@@ -66,7 +66,7 @@ where rider_name = 'Bloop';
 
 select enquire_admin_availability(ARRAY['SFCS']);
 -- ============================================================
--- SFCS: Production Setup
+-- BNAT: Production Setup
 -- ============================================================
 
 '447827180109' - Mi
