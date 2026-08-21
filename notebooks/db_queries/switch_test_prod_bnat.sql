@@ -37,31 +37,19 @@ update ordelo_config set config_value = 'https://rest-agent-test.ordelo.app' whe
 SELECT * FROM ordelo_post('BNAT_APP_URL', '/restaurant-base-url-cache/reset');
 SELECT * FROM ordelo_post('BNAT_APP_URL', '/restaurant-master-cache/reset');
 
+update rider_master
+set is_in_shift = true,
+    town = 'dummy',
+    vehicle_type = 'car'
+where rider_name = 'Lohith';
+
+
 
 update rider_master
 set is_in_shift = true,
     town = 'dummy',
     vehicle_type = 'car'
 where rider_name = 'Rahul';
-
-
-update rider_master
-set is_in_shift = true,
-    town = 'dummy',
-    vehicle_type = 'car'
-where rider_name = 'Lohith';
-
-update rider_master
-set is_in_shift = true,
-    town = 'dummy',
-    vehicle_type = 'scooter'
-where rider_name = 'Lohith';
-
-update rider_master
-set is_in_shift = true,
-    town = 'dummy',
-    vehicle_type = 'car'
-where rider_name = 'Bloop';
 
 
 select enquire_admin_availability(ARRAY['SFCS']);
@@ -78,7 +66,7 @@ select enquire_admin_availability(ARRAY['SFCS']);
 update restaurant_master
 set admins = Array[ '447446933210','447919202938','447827180109', '447769081769', '447312083527'],
     rest_stale_active_threads_minutes = 10,
-    city='Salisbury',
+    city='Orpington',
     service_hours_json = '{
   "mon": [["11:30", "14:00"], ["16:00", "23:00"]],
   "tue": [["11:30", "14:00"], ["16:00", "23:00"]],
@@ -94,13 +82,13 @@ update ordelo_config set config_value = 'https://bnat-agent.fly.dev' where confi
 
 update rider_master
 set is_in_shift = true,
-    town = 'Salisbury',
-    vehicle_type = 'bicycle'
+    town = 'Orpington',
+    vehicle_type = 'car'
 where rider_name = 'Lohith';
 
 update rider_master
 set is_in_shift = true,
-    town = 'Salisbury',
+    town = 'Orpington',
     vehicle_type = 'bicycle'
 where rider_name = 'Bloop';
 

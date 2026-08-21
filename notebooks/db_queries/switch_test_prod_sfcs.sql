@@ -69,6 +69,7 @@ update restaurant_master
 set admins = Array[ '447446933210','447919202938','447827180109', '447769081769', '447312083527'],
     rest_stale_active_threads_minutes = 10,
     city='Salisbury',
+    auto_accept = true,
     service_hours_json = '{
   "mon": [["11:30", "14:00"], ["16:00", "23:00"]],
   "tue": [["11:30", "14:00"], ["16:00", "23:00"]],

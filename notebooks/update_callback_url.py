@@ -42,8 +42,8 @@ business_phone_number = wa_client.get_business_phone_number(
 
 
 # %% Update the WABA-level callback. Executing this cell changes live Meta state.
-CALLBACK_URL = "https://rest-agent-test.ordelo.app/"
-# CALLBACK_URL = "https://bnat-agent.fly.dev/"
+# CALLBACK_URL = "https://rest-agent-test.ordelo.app/"
+CALLBACK_URL = "https://bnat-agent.fly.dev/"
 # CALLBACK_URL = "https://sfcs-agent.fly.dev/"
 # CALLBACK_URL = "https://elas-agg.ordelo.app/"
 
@@ -52,6 +52,7 @@ update_result = wa_client.override_waba_callback_url(
     verify_token=waba_business_settings.waa_verify_token,
     waba_id=waba_business_settings.waa_account_id,
 )
+
 update_result
 
 # %% Fetch the effective phone configuration again after the update.
