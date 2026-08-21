@@ -5,8 +5,8 @@ from importlib import import_module
 
 from restaurant_agent_runtime.config.bundle import load_settings_bundle
 
-# APP = "bnat"
-APP = "elas"
+APP = "bnat"
+# APP = "elas"
 # APP = "sfcs"
 
 # %%
@@ -37,6 +37,7 @@ business_phone_number = wa_client.get_business_phone_number(
 (
     business_phone_number.verified_name,
     business_phone_number.webhook_configuration,
+    waba_business_settings,
 )
 
 
