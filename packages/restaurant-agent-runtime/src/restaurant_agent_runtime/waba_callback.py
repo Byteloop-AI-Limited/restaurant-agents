@@ -9,6 +9,9 @@ import httpx
 
 from restaurant_agent_runtime.config.waba_setting import WABA_VALIDATE_UPDATES
 from restaurant_agent_runtime.runtime import RestaurantIdentity, RestaurantRuntime
+from restaurant_agent_runtime.services.operational_diagnostics import (
+    application_url_details,
+)
 
 
 class CallbackValidationError(RuntimeError):
@@ -84,6 +87,12 @@ async def build_runtime_details(runtime: RestaurantRuntime) -> dict[str, Any]:
             "service_hours": None,
             "callback_url": None,
             "configured_callback_url": runtime.settings.waba.waa_callback_url,
+            "ordelo_services": {
+                "ORDELO_APP_URL": None,
+                "BNAT_APP_URL": None,
+                "SFCS_APP_URL": None,
+                "ELAS_APP_URL": None,
+            },
             "details_errors": {},
         }
     )
@@ -103,16 +112,27 @@ async def build_runtime_details(runtime: RestaurantRuntime) -> dict[str, Any]:
         except Exception:
             return {}, "unavailable"
 
+    async def load_operational_details():
+        return await asyncio.to_thread(application_url_details, runtime.operational_lookups)
+
     (
         (meta_details, meta_error),
         (restaurant_details, restaurant_error),
-    ) = await asyncio.gather(load_meta_details(), load_restaurant_details())
+        (ordelo_services, ordelo_errors),
+    ) = await asyncio.gather(
+        load_meta_details(),
+        load_restaurant_details(),
+        load_operational_details(),
+    )
     details.update(meta_details)
     details.update(restaurant_details)
+    details["ordelo_services"] = ordelo_services
     if meta_error:
         details["details_errors"]["meta"] = meta_error
     if restaurant_error:
         details["details_errors"]["restaurant_master"] = restaurant_error
+    if ordelo_errors:
+        details["details_errors"]["ordelo_services"] = ordelo_errors
     return details
 
 

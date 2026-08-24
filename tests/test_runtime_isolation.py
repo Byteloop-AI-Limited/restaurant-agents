@@ -192,6 +192,18 @@ def test_details_exposes_selected_runtime_identity_without_raw_secrets(
             "service_hours": {"monday": [["10:00", "22:00"]]},
         },
     )
+    monkeypatch.setattr(
+        "restaurant_agent_runtime.waba_callback.application_url_details",
+        lambda _: (
+            {
+                "ORDELO_APP_URL": "https://ordelo.example.test",
+                "BNAT_APP_URL": "https://bnat.example.test",
+                "SFCS_APP_URL": "https://sfcs.example.test",
+                "ELAS_APP_URL": "https://elas.example.test",
+            },
+            {},
+        ),
+    )
     app, _ = _build_test_app(RestaurantIdentity(rest_ref, namespace))
 
     with TestClient(app) as client:
@@ -212,6 +224,12 @@ def test_details_exposes_selected_runtime_identity_without_raw_secrets(
         "service_hours": {"monday": [["10:00", "22:00"]]},
         "callback_url": f"https://{namespace}-waba.example.test/",
         "configured_callback_url": (f"https://{namespace}-configured.example.test/"),
+        "ordelo_services": {
+            "ORDELO_APP_URL": "https://ordelo.example.test",
+            "BNAT_APP_URL": "https://bnat.example.test",
+            "SFCS_APP_URL": "https://sfcs.example.test",
+            "ELAS_APP_URL": "https://elas.example.test",
+        },
         "details_errors": {},
     }
     assert f"{namespace}-token-secret" not in response.text

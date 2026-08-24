@@ -23,6 +23,16 @@ APP_URL_TTL_SECONDS = 60 * 60
 RESTAURANT_MASTER_TTL_SECONDS = 5 * 60
 OVERWATCH_TTL_SECONDS = 5 * 60
 
+# These are deployed Restaurant Applications, not the restaurant choices that
+# an application such as ELAS may present to customers.
+PROJECT_RESTAURANT_APP_REFS = frozenset({"BNAT", "SFCS", "ELAS"})
+DIAGNOSTIC_APP_URL_REFS = ("ORDELO", "BNAT", "SFCS", "ELAS")
+
+# Ordelo is an external app, not one of this project's own deployed Restaurant
+# Applications, but it exposes the same unified POST /internal/cache/reset
+# endpoint, so it fans out alongside them when a project-wide reset runs.
+CACHE_RESET_APP_REFS = PROJECT_RESTAURANT_APP_REFS | {"ORDELO"}
+
 CacheScope = Literal["all", "operational_config", "restaurant_master", "overwatch"]
 T = TypeVar("T")
 
@@ -77,21 +87,25 @@ class OperationalLookupCache:
         """Return the configured application URL for this restaurant or Ordelo."""
         normalized_app_ref = self._normalize_app_ref(app_ref)
 
-        def _load() -> str:
-            config_key = f"{normalized_app_ref}_APP_URL"
-            value = self._read_config_value(config_key)
-            if not isinstance(value, str) or not value.strip():
-                raise ValueError(f"No config found for {config_key} in ordelo_config")
-            return value.strip()
-
         return self._cached(
             category="app_url",
             key=normalized_app_ref,
             get=lambda: self._app_urls.get(normalized_app_ref),
             set=lambda entry: self._app_urls.__setitem__(normalized_app_ref, entry),
             ttl=self._app_url_ttl_seconds,
-            loader=_load,
+            loader=lambda: self._load_app_url(normalized_app_ref),
         )
+
+    def refresh_app_url(self, app_ref: str) -> str:
+        """Reload one application URL from ``ordelo_config`` and replace its cache entry."""
+        normalized_app_ref = self._normalize_app_ref(app_ref)
+        with self._lock_for("app_url", normalized_app_ref):
+            value = self._load_app_url(normalized_app_ref)
+            self._app_urls[normalized_app_ref] = _CacheEntry(
+                value=value,
+                expires_at=self._clock() + self._app_url_ttl_seconds,
+            )
+            return value
 
     def get_restaurant_master(self) -> RestaurantMaster:
         """Return the current runtime restaurant's cached ``RestaurantMaster``."""
@@ -206,9 +220,21 @@ class OperationalLookupCache:
 
     def _normalize_app_ref(self, app_ref: str) -> str:
         normalized = app_ref.strip().upper()
-        if normalized not in {self._rest_ref, "ORDELO", "RESTAURANT_MENU"}:
+        if normalized not in {
+            self._rest_ref,
+            "ORDELO",
+            "RESTAURANT_MENU",
+            *PROJECT_RESTAURANT_APP_REFS,
+        }:
             raise ValueError(f"Unsupported application reference: {app_ref}")
         return normalized
+
+    def _load_app_url(self, normalized_app_ref: str) -> str:
+        config_key = f"{normalized_app_ref}_APP_URL"
+        value = self._read_config_value(config_key)
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"No config found for {config_key} in ordelo_config")
+        return value.strip()
 
     def _cached(
         self,

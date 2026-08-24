@@ -30,6 +30,9 @@ graph adapter on `app.state`. It conditionally includes these router groups:
 
 The top-level operational endpoints are `GET /healthz`, `GET /identity`,
 `GET /details`, `GET /internal/activity`, and `POST /internal/cache/reset`.
+`/details` includes the effective cached `ORDELO_APP_URL`, `BNAT_APP_URL`,
+`SFCS_APP_URL`, and `ELAS_APP_URL` values under `ordelo_services`; unavailable
+keys are null with sanitized entries in `details_errors.ordelo_services`.
 The reset endpoint clears only the current process's runtime-owned operational
 lookup cache; its documented unauthenticated internal convention and scopes are
 defined in [Operational Lookup Cache](caching_system.md). The inactive
@@ -47,15 +50,24 @@ response examples, see [Operational Lookup Cache](caching_system.md#calls).
 Message handlers are registered on the runtime's exact async WhatsApp client in
 this order:
 
-1. `/reset`, an Overwatch-only operational escape hatch that marks the
+1. `/detail`, an Overwatch-only read-only command that sends the same
+   sanitized JSON object as `GET /details`.
+2. `/reset-cache`, an Overwatch-only project reset that fresh-reads the BNAT,
+   SFCS, and ELAS application URLs and requests `scope=all` cache reset from
+   each one. It reports per-app results; see [Operational Lookup Cache](caching_system.md#overwatch-project-reset).
+3. `/reset`, an Overwatch-only operational escape hatch that marks the
    sender's persistent Threads inactive using the runtime database pool.
    Regular customers receive a fixed denial.
-2. Out-of-hours guard.
-3. Shared-location handling with runtime maps settings.
-4. `/paid3100`, which posts a payment-complete simulation for the sender's
+4. Out-of-hours guard.
+5. Shared-location handling with runtime maps settings.
+6. `/paid3100`, which posts a payment-complete simulation for the sender's
    latest eligible order using exact runtime dependencies.
-5. `/debug`, which is read-only and ignores callers outside the runtime Overwatch allowlist.
-6. Default graph handler.
+7. `/debug`, which is read-only, ignores callers outside the runtime Overwatch
+   allowlist, and appends the four effective cached application URLs to graph-state output.
+8. Default graph handler.
+
+`/detail`, `/reset-cache`, `/reset`, and `/debug` are exact, case-insensitive
+commands; text such as `/reset-cache-now` does not invoke an operational command.
 
 ADR-0012 restores `/paid3100`; `/test` and `/test-t` remain removed.
 

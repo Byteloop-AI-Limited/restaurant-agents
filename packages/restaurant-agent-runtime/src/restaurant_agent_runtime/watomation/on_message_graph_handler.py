@@ -18,6 +18,8 @@ WhatsApp message handlers for customer interactions
 """
 
 # %%
+import asyncio
+import json
 from datetime import datetime, timezone
 
 import httpx
@@ -28,9 +30,14 @@ from pywa_async import WhatsApp, filters
 from restaurant_agent_runtime.config import logger
 from restaurant_agent_runtime.runtime import GraphAdapter, RestaurantRuntime
 from restaurant_agent_runtime.services.maps_service import AddressResolver
+from restaurant_agent_runtime.services.operational_diagnostics import (
+    application_url_details,
+    reset_project_application_caches,
+)
 from restaurant_agent_runtime.services.thread_management import ThreadHandler
 from restaurant_agent_runtime.services.tz_utils import UK_TZ
 from restaurant_agent_runtime.watomation.dedup import wa_dedup
+from restaurant_agent_runtime.waba_callback import build_runtime_details
 from restaurant_agent_runtime.rest_agent.service_selection import (
     classify_service_selection,
     route_service_selection,
@@ -305,7 +312,7 @@ async def handle_request_location_response(
 
 
 # %% On reset
-WHEN_RESET = filters.contains("/reset", ignore_case=True)
+WHEN_RESET = filters.matches("/reset", ignore_case=True)
 
 
 @wa_dedup
@@ -329,13 +336,35 @@ async def reset_thread(
 
 
 # %% Debug state
-WHEN_DEBUG = filters.contains("/debug", ignore_case=True)
+WHEN_DEBUG = filters.matches("/debug", ignore_case=True)
+WHEN_DETAIL = filters.matches("/detail", ignore_case=True)
+WHEN_RESET_CACHE = filters.matches("/reset-cache", ignore_case=True)
 
 
 def _format_debug_state(state: dict) -> str:
     lines = ["*Debug State*"]
     for key, value in state.items():
         lines.append(f"{key}: {value}")
+    return "\n".join(lines)
+
+
+def _format_application_urls(app_urls: dict[str, str | None]) -> str:
+    lines = ["*App URLs*"]
+    for key, value in app_urls.items():
+        lines.append(f"{key}: {value or 'unavailable'}")
+    return "\n".join(lines)
+
+
+def _format_cache_reset_outcomes(outcomes: dict[str, str]) -> str:
+    labels = {
+        "reset": "reset",
+        "unavailable": "URL unavailable",
+        "invalid_url": "invalid URL",
+        "failed": "reset failed",
+    }
+    lines = ["*Cache Reset*"]
+    for app_ref, outcome in outcomes.items():
+        lines.append(f"{app_ref}: {labels[outcome]}")
     return "\n".join(lines)
 
 
@@ -355,4 +384,40 @@ async def handle_debug_state(
     except Exception as e:
         logger.error(f"Error fetching debug state for {recipient}: {e}")
         text = f"Error fetching debug state: {e}"
-    await wa.send_message(to=recipient, text=text)
+    app_urls, _ = await asyncio.to_thread(
+        application_url_details,
+        runtime.operational_lookups,
+    )
+    await wa.send_message(
+        to=recipient,
+        text=f"{text}\n\n{_format_application_urls(app_urls)}",
+    )
+
+
+async def handle_runtime_details(
+    wa: WhatsApp,
+    msg: Message,
+    *,
+    runtime: RestaurantRuntime,
+):
+    """Send the same sanitized runtime details exposed by ``GET /details``."""
+    recipient = msg.sender
+    if not runtime.operational_lookups.is_overwatch_recipient(recipient):
+        return
+    details = await build_runtime_details(runtime)
+    await wa.send_message(to=recipient, text=json.dumps(details, indent=2, default=str))
+
+
+@wa_dedup
+async def reset_project_cache(
+    wa: WhatsApp,
+    msg: Message,
+    *,
+    runtime: RestaurantRuntime,
+):
+    """Force-refresh configured app URLs and reset every app's local cache."""
+    recipient = msg.sender
+    if not runtime.operational_lookups.is_overwatch_recipient(recipient):
+        return
+    outcomes = await reset_project_application_caches(runtime.operational_lookups)
+    await wa.send_message(to=recipient, text=_format_cache_reset_outcomes(outcomes))

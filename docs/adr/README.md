@@ -39,6 +39,7 @@ decision; add a new ADR that supersedes it.
 | [0022](0022-disable-webhook-signature-validation.md) | Accepted | Disable webhook signature validation |
 | [0023](0023-sectionlist-enquiry-menus.md) | Superseded | WhatsApp SectionList enquiry menus with an app-owned extra option |
 | [0024](0024-per-brand-enquiry-rows.md) | Accepted | Per-brand enquiry rows and tool-response-only transfer guards |
+| [0025](0025-overwatch-project-cache-reset.md) | Accepted | Overwatch project cache reset and URL diagnostics |
 
 ## Creating an ADR
 

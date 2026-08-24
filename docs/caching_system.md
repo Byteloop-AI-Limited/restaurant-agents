@@ -74,6 +74,19 @@ exposure remains an infrastructure responsibility. It returns no cached values.
 `SFCS` on an SFCS instance). Passing it with any other scope returns `422`; an
 unsupported reference returns `404`.
 
+## Overwatch project reset
+
+WhatsApp `/reset-cache` is available only to an Overwatch recipient. It
+force-refreshes `BNAT_APP_URL`, `SFCS_APP_URL`, and `ELAS_APP_URL` from
+`ordelo_config`, then sends one `POST /internal/cache/reset?scope=all` request
+to each configured URL. It reports each target's outcome and continues if one
+target is unavailable or fails. It accepts no arguments.
+
+The command makes one request per configured application URL, not one request
+per deployed instance. Additional replicas must be reset separately or allowed
+to expire their normal TTLs. `ORDELO_APP_URL` is refreshed for diagnostics but
+is not a cache-reset target.
+
 ### Calls
 
 Use the deployed URL of the Restaurant Application whose process you intend to
