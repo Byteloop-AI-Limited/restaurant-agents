@@ -149,6 +149,7 @@ context. Events report something that has already happened.
 | Update takeaway pickup time | Delivery timed out/completed |
 | Terminate stale Thread | Takeaway pickup time updated/order ready |
 | Request rider location (customer) | Rider location observed/reported |
+| Reset project operational caches (Overwatch) | Application cache reset requested |
 
 ## Invariants
 
@@ -169,6 +170,9 @@ context. Events report something that has already happened.
 - Operational configuration may be cached only through the exact runtime's
   Operational Lookup Cache; its database source remains authoritative, and
   failed, missing, stale, or transactional data is never cached.
+- Project Cache Reset is Overwatch-only, refreshes its fixed configured target
+  URLs from Ordelo before fan-out, and does not turn process-local cache reset
+  into a multi-instance guarantee.
 - New graph/state semantics use an app-owned GraphAdapter rather than mutation
   of private shared-runtime internals.
 - The standard WhatsApp surface exposes the side-effecting `/paid3100` payment
@@ -192,6 +196,14 @@ symbol: OperationalLookupCache
 feature: platform-domain-model
 description: >
   Runtime-owned TTL cache for non-transactional operational configuration and the database-backed Overwatch allowlist.
+```
+
+```code-ref
+file: packages/restaurant-agent-runtime/src/restaurant_agent_runtime/services/operational_diagnostics.py
+symbol: reset_project_application_caches
+feature: platform-domain-model
+description: >
+  Overwatch-triggered best-effort fan-out that refreshes configured application URLs and resets each target process cache once.
 ```
 
 ```code-ref

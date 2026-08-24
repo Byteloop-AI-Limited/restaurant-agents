@@ -70,12 +70,16 @@ def _register_whatsapp_handlers(
     )
     from restaurant_agent_runtime.watomation.on_message_graph_handler import (
         WHEN_DEBUG,
+        WHEN_DETAIL,
         WHEN_PAYMENT_COMPLETE,
         WHEN_RESET,
+        WHEN_RESET_CACHE,
         create_out_of_hours_filter,
         handle_debug_state,
+        handle_runtime_details,
         handle_request_location_response,
         handle_wa_msg_in_graph,
+        reset_project_cache,
         reset_thread,
         send_closed_message,
         simulate_payment_complete,
@@ -95,6 +99,12 @@ def _register_whatsapp_handlers(
         return await handle_debug_state(
             client, message, graph_adapter=graph_adapter, runtime=runtime
         )
+
+    async def bound_detail(client, message):
+        return await handle_runtime_details(client, message, runtime=runtime)
+
+    async def bound_reset_cache(client, message):
+        return await reset_project_cache(client, message, runtime=runtime)
 
     async def bound_graph(client, message):
         return await handle_wa_msg_in_graph(
@@ -175,6 +185,8 @@ def _register_whatsapp_handlers(
         )
 
     wa.add_handlers(
+        MessageHandler(callback=bound_detail, filters=WHEN_DETAIL),
+        MessageHandler(callback=bound_reset_cache, filters=WHEN_RESET_CACHE),
         MessageHandler(callback=bound_reset, filters=WHEN_RESET),
         MessageHandler(
             callback=bound_closed_message,

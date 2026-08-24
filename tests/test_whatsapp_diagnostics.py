@@ -72,13 +72,105 @@ def test_standard_message_registration_includes_only_payment_simulation():
         ),
     )
 
-    assert [handler._callback.__name__ for handler in wa.handlers[:6]] == [
+    assert [handler._callback.__name__ for handler in wa.handlers[:8]] == [
+        "bound_detail",
+        "bound_reset_cache",
         "bound_reset",
         "bound_closed_message",
         "bound_location",
         "bound_payment_complete",
         "bound_debug",
         "bound_graph",
+    ]
+
+
+def test_operational_commands_use_exact_filters_without_reset_collision():
+    reset_cache = SimpleNamespace(text="/reset-cache", _txt_fields=("text",))
+    reset = SimpleNamespace(text="/reset", _txt_fields=("text",))
+    detail = SimpleNamespace(text="/detail", _txt_fields=("text",))
+    details = SimpleNamespace(text="/details", _txt_fields=("text",))
+
+    assert handlers.WHEN_RESET_CACHE.check_sync(None, reset_cache)
+    assert not handlers.WHEN_RESET.check_sync(None, reset_cache)
+    assert handlers.WHEN_RESET.check_sync(None, reset)
+    assert handlers.WHEN_DETAIL.check_sync(None, detail)
+    assert not handlers.WHEN_DETAIL.check_sync(None, details)
+
+
+@pytest.mark.asyncio
+async def test_detail_uses_shared_runtime_details_for_overwatch(monkeypatch):
+    expected = {"rest_ref": "BNAT", "ordelo_services": {"BNAT_APP_URL": "https://bnat"}}
+
+    async def fake_details(runtime):
+        assert runtime.identity.rest_ref == "BNAT"
+        return expected
+
+    monkeypatch.setattr(handlers, "build_runtime_details", fake_details)
+    wa = FakeWhatsApp()
+    runtime = SimpleNamespace(
+        identity=SimpleNamespace(rest_ref="BNAT"),
+        operational_lookups=SimpleNamespace(is_overwatch_recipient=lambda _: True),
+    )
+
+    await handlers.handle_runtime_details(
+        wa,
+        SimpleNamespace(sender="447000000001"),
+        runtime=runtime,
+    )
+
+    assert wa.sent == [{"to": "447000000001", "text": '{\n  "rest_ref": "BNAT",\n  "ordelo_services": {\n    "BNAT_APP_URL": "https://bnat"\n  }\n}'}]
+
+
+@pytest.mark.asyncio
+async def test_operational_commands_ignore_non_overwatch_before_work(monkeypatch):
+    called = False
+
+    async def fake_details(_):
+        nonlocal called
+        called = True
+        return {}
+
+    monkeypatch.setattr(handlers, "build_runtime_details", fake_details)
+    wa = FakeWhatsApp()
+    runtime = SimpleNamespace(
+        operational_lookups=SimpleNamespace(is_overwatch_recipient=lambda _: False),
+    )
+
+    await handlers.handle_runtime_details(
+        wa,
+        SimpleNamespace(sender="447000000002"),
+        runtime=runtime,
+    )
+
+    assert called is False
+    assert wa.sent == []
+
+
+@pytest.mark.asyncio
+async def test_reset_cache_fans_out_only_for_overwatch(monkeypatch):
+    async def fake_reset(operational_lookups):
+        assert operational_lookups.marker == "runtime-cache"
+        return {"BNAT": "reset", "ELAS": "failed", "SFCS": "reset"}
+
+    monkeypatch.setattr(handlers, "reset_project_application_caches", fake_reset)
+    wa = FakeWhatsApp()
+    runtime = SimpleNamespace(
+        operational_lookups=SimpleNamespace(
+            marker="runtime-cache", is_overwatch_recipient=lambda _: True
+        ),
+    )
+
+    await handlers.reset_project_cache(
+        wa,
+        SimpleNamespace(id="reset-cache-overwatch", sender="447000000001"),
+        runtime=runtime,
+    )
+
+    assert wa.sent == [
+        {
+            "to": "447000000001",
+            "text": "*Cache Reset*\nBNAT: reset\nELAS: reset failed\nSFCS: reset",
+        }
     ]
 
 

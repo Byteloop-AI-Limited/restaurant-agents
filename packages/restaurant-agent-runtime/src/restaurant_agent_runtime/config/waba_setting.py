@@ -4,6 +4,7 @@
 import base64
 from typing import Any
 
+
 from loguru import logger
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -91,3 +92,5 @@ class WabaBusinessSettings(BaseSettings):
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.waa_token}",
         }
+
+# %%

@@ -168,6 +168,14 @@ configuration: application URLs, RestaurantMaster, and the database-backed
 Overwatch recipient list. It is not a source of truth and excludes
 transactional customer, order, payment, fulfilment, and Thread data.
 
+### Project Cache Reset
+
+An Overwatch-only WhatsApp operational command that force-refreshes the
+configured BNAT, SFCS, and ELAS application URLs from `ordelo_config` and
+requests one process-local `scope=all` reset from each deployed application.
+It is a best-effort fan-out, not a guarantee that every replica has been
+cleared.
+
 ## P
 
 ### Payment Projection

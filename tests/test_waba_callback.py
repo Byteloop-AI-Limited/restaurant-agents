@@ -122,6 +122,9 @@ async def test_enriched_details_returns_sanitized_partial_result(monkeypatch):
             database_client=SimpleNamespace(),
         ),
         async_wa_client=UnavailableWhatsApp(),
+        operational_lookups=SimpleNamespace(
+            get_app_url=lambda app_ref: f"https://{app_ref.lower()}.test"
+        ),
     )
 
     details = await build_runtime_details(runtime)
@@ -131,6 +134,12 @@ async def test_enriched_details_returns_sanitized_partial_result(monkeypatch):
     assert details["service_hours"] is None
     assert details["callback_url"] is None
     assert details["configured_callback_url"] == "https://configured.test/"
+    assert details["ordelo_services"] == {
+        "ORDELO_APP_URL": "https://ordelo.test",
+        "BNAT_APP_URL": "https://bnat.test",
+        "SFCS_APP_URL": "https://sfcs.test",
+        "ELAS_APP_URL": "https://elas.test",
+    }
     assert details["details_errors"] == {
         "meta": "unavailable",
         "restaurant_master": "unavailable",
