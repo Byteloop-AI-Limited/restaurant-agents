@@ -126,7 +126,9 @@ existing `GraphAdapterFactory` callable.
    specialist.
 10. Standard transfer tools update `active_agent` with parent-graph
     `Command` objects. `cleanup_before_model` and `respond_on_wa` coordinate
-    `/DoNotRespond:` turns and outbound WhatsApp responses.
+    `/DoNotRespond:` turns and outbound WhatsApp responses. Deterministic menu
+    sends persist explicit `/DoNotRespond:` outcome records; menu tools refuse
+    to send while retained specialist work is active.
 11. State persists across turns through the PostgreSQL checkpointer. Debug and
     state-inspection methods reuse the same adapter boundary.
 12. External payment and fulfilment events update the lifecycle projection.
@@ -136,7 +138,11 @@ existing `GraphAdapterFactory` callable.
     timeout must match the active unassigned delivery before it can notify and
     release; it leaves the Thread active so the customer can later select a new
     service. Completed delivery and confirmed takeaway pickup continue to the
-    existing triage termination flow.
+    existing triage termination flow. The takeaway payment-pending update and
+    pickup completion are serialized by a process-local `(rest_ref, recipient)`
+    gate, so an auto-accepted pickup event cannot consume the payment update's
+    checkpoint turn. This is intentionally limited to the current one-worker
+    deployment, not a durable multi-replica or replay guarantee.
 13. `update_customer` (shared by `delivery_agent` and `takeaway_agent`) refuses
     to fire unless the current turn was opened by a fresh runtime
     `SystemMessage`: a customer's own message can never trigger it, and it can

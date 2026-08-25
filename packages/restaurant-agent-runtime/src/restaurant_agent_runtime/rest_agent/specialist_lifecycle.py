@@ -102,7 +102,8 @@ class SpecialistFlowView:
                 f"{flow_name} flow is in motion. The current specialist owns this "
                 "conversation. Strictly avoid handover to other agents. Handle safe "
                 "customer support here, and use authoritative system-provided updates "
-                "only; do not invent order or fulfilment facts."
+                "only; do not invent order or fulfilment facts. Do not call a menu tool "
+                "or start another order while this flow is retained."
             )
             if self.active_agent == "delivery_agent" and self.is_payment_successful:
                 return (
@@ -231,7 +232,8 @@ async def notify_release_and_optionally_terminate(
         await graph_adapter.run_rest_graph_with_custom_msg(
             recipient=recipient,
             system_msg=(
-                "Call `update_customer` with "
+                "AUTHORITATIVE SPECIALIST LIFECYCLE EVENT: do not call a menu tool, "
+                "start a new order, or hand off. Call `update_customer` with "
                 f"message={message!r}. Then end this turn."
             ),
             state_update_dict={"active_agent": specialist, "retain_thread": True},
@@ -252,7 +254,10 @@ async def notify_release_and_optionally_terminate(
     if terminate:
         await graph_adapter.run_rest_graph_with_custom_msg(
             recipient=recipient,
-            system_msg="Call `terminate_conversation` to end the conversation.",
+            system_msg=(
+                "AUTHORITATIVE TERMINAL EVENT: call `terminate_conversation` to end "
+                "the conversation. Do not transfer, start an order, or call a menu tool."
+            ),
             state_update_dict={"active_agent": "triage_agent", "retain_thread": False},
         )
 

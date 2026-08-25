@@ -554,7 +554,7 @@ async def test_takeaway_callback_persists_and_sends_menu_without_model(monkeypat
     assert isinstance(first["msgs"][0], HumanMessage)
     second = graph_adapter.run_rest_graph_with_custom_msg.await_args_list[1].kwargs
     assert second["persist_only"] is True
-    assert "/DoNotRespond:" in second["msgs"][0].content
+    assert "The takeaway menu was successfully sent" in second["msgs"][0].content
     menu_sender.assert_awaited_once()
 
 

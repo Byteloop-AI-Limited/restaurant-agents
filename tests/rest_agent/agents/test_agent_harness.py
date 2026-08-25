@@ -11,18 +11,21 @@ Unit tests for rest_agent.agents.agent_harness pure helpers
 SFCS is single-restaurant, so there is no rest_ref guard (unlike elai).
 """
 
+import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
 from restaurant_agent_runtime.rest_agent import agent_wa_senders
+from restaurant_agent_runtime.rest_agent.agents import agent_harness
 from restaurant_agent_runtime.rest_agent.agents.agent_harness import (
     _last_turn_started_by_system_message,
     _normalize_min_order_value,
     _run_transfer_guards,
     _transfer_check_retained_specialist_work,
     send_restaurant_menu_tool,
+    send_takeaway_menu_tool,
     transfer_to_delivery,
     transfer_to_takeaway,
     transfer_to_triage,
@@ -94,6 +97,66 @@ def test_last_turn_started_by_system_message_skips_intermediate_tool_exchanges()
             ToolMessage("other tool result", tool_call_id="tc-0"),
         ]
     )
+
+
+async def test_retained_customer_menu_requests_end_with_completion_first_reply(
+    monkeypatch,
+):
+    menu_sender = AsyncMock()
+    monkeypatch.setattr(agent_harness, "send_new_order_menu", menu_sender)
+    runtime = SimpleNamespace(context=SimpleNamespace())
+
+    result = await send_takeaway_menu_tool(
+        state={
+            "active_agent": "takeaway_agent",
+            "retain_thread": True,
+            "messages": [HumanMessage("Can I see the menu again?")],
+        },
+        tool_call_id="tc-1",
+        runtime=runtime,
+    )
+
+    menu_sender.assert_not_awaited()
+    assert result.goto == "__end__"
+    assert result.update["messages"][0].tool_call_id == "tc-1"
+    assert "current collection order first" in result.update["messages"][1].content
+
+    delivery_result = await send_restaurant_menu_tool(
+        state={
+            "active_agent": "delivery_agent",
+            "retain_thread": True,
+            "messages": [HumanMessage("Can I see the delivery menu again?")],
+        },
+        tool_call_id="tc-2",
+        runtime=runtime,
+    )
+
+    menu_sender.assert_not_awaited()
+    assert delivery_result.goto == "__end__"
+    assert "current delivery order first" in delivery_result.update["messages"][1].content
+
+
+async def test_retained_system_menu_attempts_never_send_a_menu(monkeypatch):
+    menu_sender = AsyncMock()
+    monkeypatch.setattr(agent_harness, "send_new_order_menu", menu_sender)
+    runtime = SimpleNamespace(context=SimpleNamespace())
+    state = {
+        "active_agent": "takeaway_agent",
+        "retain_thread": True,
+        "messages": [
+            HumanMessage("I want takeaway"),
+            SystemMessage("Call `update_customer` with message='Pickup pending'."),
+        ],
+    }
+
+    results = await asyncio.gather(
+        send_takeaway_menu_tool(state=state, tool_call_id="tc-1", runtime=runtime),
+        send_takeaway_menu_tool(state=state, tool_call_id="tc-2", runtime=runtime),
+    )
+
+    menu_sender.assert_not_awaited()
+    assert all(isinstance(result, str) for result in results)
+    assert all("call `update_customer`" in result for result in results)
 
 
 async def test_update_customer_sends_once_and_ends_without_state_changes():
@@ -303,3 +366,4 @@ async def test_send_restaurant_menu_tool_blocks_closed_recipient_but_allows_over
     )
     sender.assert_awaited_once()
     assert isinstance(allowed_cmd.update["messages"][-1], AIMessage)
+    assert "successfully sent" in allowed_cmd.update["messages"][-1].content

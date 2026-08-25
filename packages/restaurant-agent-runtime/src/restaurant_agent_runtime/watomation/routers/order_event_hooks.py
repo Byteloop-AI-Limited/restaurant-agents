@@ -2,7 +2,9 @@
 
 # %%
 
+import asyncio
 from datetime import datetime, timezone
+from weakref import WeakValueDictionary
 from zoneinfo import ZoneInfo
 
 UK_TZ = ZoneInfo("Europe/London")
@@ -33,6 +35,14 @@ from restaurant_agent_runtime.web.dependencies import (
 # %%
 
 router = APIRouter(tags=["order-event-hooks"])
+
+
+# The pickup-time webhook carries a recipient but not a Thread ID. In the
+# current one-worker application deployment, this process-local key identifies
+# the active Restaurant conversation without widening the external contract.
+_TAKEAWAY_LIFECYCLE_LOCKS: WeakValueDictionary[tuple[str, str], asyncio.Lock] = (
+    WeakValueDictionary()
+)
 
 
 # %% Validation helper
@@ -87,6 +97,70 @@ def _is_duplicate_delivery_payment_event(state: dict, food_order: FoodOrder) -> 
         and flow.is_payment_successful
         and state.get("order_id") == food_order.order_id
     )
+
+
+def _takeaway_payment_pending_pickup_system_message() -> str:
+    """Return the authoritative collection payment update for the graph."""
+    return (
+        "AUTHORITATIVE TAKEAWAY PAYMENT EVENT: payment is confirmed and pickup time "
+        "is pending. Do not call a menu tool, start a new order, or hand off. Call "
+        "`update_customer` with message='We will confirm the pickup time in a moment.'. "
+        "Then end this turn."
+    )
+
+
+def _takeaway_lifecycle_lock(rest_ref: str, recipient: str) -> asyncio.Lock:
+    """Return the per-conversation lock for authoritative takeaway updates."""
+    key = (rest_ref, recipient)
+    lock = _TAKEAWAY_LIFECYCLE_LOCKS.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _TAKEAWAY_LIFECYCLE_LOCKS[key] = lock
+    return lock
+
+
+async def _run_reserved_takeaway_payment_update(
+    *,
+    lock: asyncio.Lock,
+    recipient: str,
+    system_msg: str,
+    state_update_dict: dict,
+    graph_adapter: GraphAdapter,
+) -> None:
+    """Run the payment-pending turn, then release its pre-reserved gate."""
+    try:
+        await graph_adapter.run_rest_graph_with_custom_msg(
+            recipient=recipient,
+            system_msg=system_msg,
+            state_update_dict=state_update_dict,
+        )
+    finally:
+        lock.release()
+
+
+async def _run_serialized_takeaway_pickup_completion(
+    *,
+    rest_ref: str,
+    recipient: str,
+    specialist: str,
+    message: str,
+    graph_adapter: GraphAdapter,
+    terminate: bool,
+) -> None:
+    """Run the complete pickup sequence after any payment-pending turn."""
+    lock = _takeaway_lifecycle_lock(rest_ref, recipient)
+    if lock.locked():
+        logger.info(
+            "Waiting for earlier takeaway lifecycle work for recipient {}", recipient
+        )
+    async with lock:
+        await notify_release_and_optionally_terminate(
+            recipient=recipient,
+            specialist=specialist,
+            message=message,
+            graph_adapter=graph_adapter,
+            terminate=terminate,
+        )
 
 
 # %% Payment Complete
@@ -205,24 +279,34 @@ async def payment_complete(
         )
 
         # Collection order received, wait for pickup time confirmation
-        system_msg = (
-            "Call `update_customer` with "
-            "message='We will confirm the pickup time in a moment.'"
+        system_msg = _takeaway_payment_pending_pickup_system_message()
+        state_update_dict = retained_specialist_state(
+            "takeaway",
+            order_id=food_order.order_id,
+            order_number=order_number,
+            reply_to_msg_id=msg.id,
         )
+        lock = _takeaway_lifecycle_lock(rest_ref, recipient)
+        if lock.locked():
+            logger.info(
+                "Waiting to reserve takeaway lifecycle work for recipient {}", recipient
+            )
+        await lock.acquire()
 
-        background_tasks.add_task(
-            run_background_task,
-            "collection_payment_complete",
-            graph_adapter.run_rest_graph_with_custom_msg,
-            recipient=recipient,
-            system_msg=system_msg,
-            state_update_dict=retained_specialist_state(
-                "takeaway",
-                order_id=food_order.order_id,
-                order_number=order_number,
-                reply_to_msg_id=msg.id,
-            ),
-        )
+        try:
+            background_tasks.add_task(
+                run_background_task,
+                "collection_payment_complete",
+                _run_reserved_takeaway_payment_update,
+                lock=lock,
+                recipient=recipient,
+                system_msg=system_msg,
+                state_update_dict=state_update_dict,
+                graph_adapter=graph_adapter,
+            )
+        except Exception:
+            lock.release()
+            raise
 
     return {
         "status": "success",
@@ -340,7 +424,8 @@ async def takeaway_pickup_time_updated(
     background_tasks.add_task(
         run_background_task,
         "customer_collection_completion_sequence",
-        notify_release_and_optionally_terminate,
+        _run_serialized_takeaway_pickup_completion,
+        rest_ref=rest_ref,
         recipient=recipient,
         specialist="takeaway_agent",
         message=(

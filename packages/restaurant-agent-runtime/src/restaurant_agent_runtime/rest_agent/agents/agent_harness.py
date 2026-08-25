@@ -65,6 +65,10 @@ from restaurant_agent_runtime.rest_agent.service_selection import (
     retained_handoff_block,
     route_tool_service_selection,
 )
+from restaurant_agent_runtime.rest_agent.specialist_lifecycle import (
+    SpecialistFlowView,
+    retained_completion_first_message,
+)
 from restaurant_agent_runtime.rest_agent.restaurant_selection import (
     dinein_available,
     resolve_delivery_promo_caption,
@@ -189,7 +193,30 @@ async def _send_menu_tool(
     tool_call_id: Annotated[str, InjectedToolCallId],
     runtime: ToolRuntime[ContextSchema],
     order_type: Literal["delivery", "takeaway"],
-) -> Command:
+) -> Command | str:
+    retained_flow = SpecialistFlowView.from_state(state)
+    if retained_flow.owns_specialist_work:
+        if _last_turn_started_by_system_message(state.get("messages", ())):
+            return (
+                "Menu send blocked because authoritative retained-order lifecycle work "
+                "is active. Do not send a menu, start a new order, or hand off. Follow "
+                "the current system instruction and call `update_customer` with its "
+                "supplied message."
+            )
+
+        return Command(
+            goto=END,
+            update={
+                "messages": [
+                    ToolMessage(
+                        "Menu send blocked because retained specialist work is active.",
+                        tool_call_id=tool_call_id,
+                    ),
+                    AIMessage(retained_completion_first_message(state)),
+                ]
+            },
+        )
+
     ctx = runtime.context
     result = await send_new_order_menu(
         recipient=ctx.recipient,
@@ -245,7 +272,9 @@ async def _send_menu_tool(
                     tool_call_id=tool_call_id,
                 ),
                 AIMessage(
-                    "/DoNotRespond: Please select items from the menu to place your order."
+                    f"/DoNotRespond: The {order_label} menu was successfully sent to "
+                    "the customer. Wait for them to place the order. Do not send another "
+                    "menu unless they explicitly request one and no retained order is active."
                 ),
             ],
         },
@@ -256,7 +285,7 @@ async def send_restaurant_menu_tool(
     state: Annotated[dict, InjectedState],
     tool_call_id: Annotated[str, InjectedToolCallId],
     runtime: ToolRuntime[ContextSchema],
-) -> Command:
+) -> Command | str:
     """Send the delivery menu link after minimum order is available."""
     return await _send_menu_tool(
         state=state,
@@ -270,7 +299,7 @@ async def send_takeaway_menu_tool(
     state: Annotated[dict, InjectedState],
     tool_call_id: Annotated[str, InjectedToolCallId],
     runtime: ToolRuntime[ContextSchema],
-) -> Command:
+) -> Command | str:
     """Send the takeaway menu link."""
     return await _send_menu_tool(
         state=state,
