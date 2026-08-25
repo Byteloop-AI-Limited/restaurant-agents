@@ -17,3 +17,4 @@ def test_bnat_identity_is_app_owned():
         "Subscribe for offers",
     ]
     assert PRESENTATION.enquiry_button_label == "More options"
+    assert PRESENTATION.takeaway_button_label == "Collection (10% off)"
