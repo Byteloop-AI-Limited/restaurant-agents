@@ -61,8 +61,10 @@ for the complete ownership model.
    middleware, thirteen ordered default tools, and any app-owned extra tools.
 6. Address tools capture, update, and confirm customer location. The minimum
    order tool and delivery menu tool retain the final deterministic availability
-   guard before sending a restaurant-specific menu link; the model never asks
-   the customer for a date or time to decide availability.
+   guard before sending a restaurant-specific menu link. The menu tool also
+   refuses every send while specialist work is retained, so an authoritative
+   lifecycle turn cannot resend a menu; the model never asks the customer for a
+   date or time to decide availability.
 7. Payment, order, and rider tools read and update shared graph state and use
    injected runtime resources rather than application imports or module-global
    WhatsApp clients.

@@ -50,24 +50,33 @@ for the complete ownership model.
    check.
 2. An approved callback persists `active_agent="takeaway_agent"` and the
    selection without invoking the model, then sends the collection menu through
-   the exact runtime-bound WhatsApp client.
+   the exact runtime-bound WhatsApp client. It then persists an explicit
+   `/DoNotRespond:` record that the customer received the menu; this is valid
+   conversation evidence, not a synthetic tool response.
 3. Typed explicit collection intent, collection callbacks, and transfer tools
    use the same shared selection policy. A retained delivery or takeaway flow
    preserves its current specialist; an open flow starts the selected service.
    Informational, status, cancellation, and negated messages remain model-owned.
 4. `send_takeaway_menu_tool()` uses the same final availability guard for an
-   already-active conversation. It sends either the menu, the exact closed message,
-   or the concise retry-later fallback; it never asks the customer for the date
-   or time.
+   already-active conversation. It also refuses every send while retained
+   specialist work is active: lifecycle turns receive tool feedback to perform
+   their authoritative update, while customer turns receive the completion-first
+   reply. Otherwise it sends either the menu, the exact closed message, or the
+   concise retry-later fallback; it never asks the customer for the date or time.
 5. `verify_if_payment_complete()` reads order summary, payment-link, and payment
    state to tell the model whether payment is complete, pending, or not yet
    ready.
 6. `payment_complete()` validates the route, recipient, and thread. For
    collection it acknowledges the order, activates `takeaway_agent`, records
    order/payment state, and retains the thread while pickup time is pending.
-7. `takeaway_pickup_time_updated()` schedules a runtime-bound two-step sequence:
-   notify through `takeaway_agent`, then activate triage and call
-   `terminate_conversation`.
+   Before it returns, it reserves the current process's `(rest_ref, recipient)`
+   lifecycle gate, so an immediately arriving pickup-time event cannot run on
+   the checkpoint first.
+7. `takeaway_pickup_time_updated()` waits for that same lifecycle gate, then
+   schedules a runtime-bound two-step sequence: notify through
+   `takeaway_agent`, then activate triage and call `terminate_conversation`.
+   The gate is deliberately process-local and relies on the current one-worker
+   deployment; it is not durable replay or multi-replica idempotency.
 8. `takeaway_ready()` sends a direct runtime-bound WhatsApp notification when
    the order is ready for collection.
 9. `transfer_to_delivery` and `transfer_to_triage` are model adapters to that

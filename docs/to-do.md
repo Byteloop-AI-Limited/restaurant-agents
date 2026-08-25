@@ -52,7 +52,13 @@ are complete. The following work is intentionally deferred.
   single invocation, not a new external read.
 - [ ] Consider compiling the graph once only after measuring a concrete benefit
   and designing the asynchronous lifecycle and checkpointer behavior. Do not
-  add speculative caches or locks.
+  add speculative caches.
+- [ ] Design durable per-thread lifecycle-event idempotency and serialization
+  before treating concurrent webhook retries or multi-replica execution as
+  supported. Takeaway payment-pending and pickup-completion graph turns are
+  serialized in the current one-worker process by `(rest_ref, recipient)`, but
+  that narrow gate does not make receipt delivery, event replay, or
+  cross-process checkpoint ordering generally idempotent.
 - [x] Remove confirmed-unused configuration aliases, process-global settings
   clients, and compatibility shims from production modules.
 - [x] Delete the `services/lg_utils.py` catch-all after moving its two live

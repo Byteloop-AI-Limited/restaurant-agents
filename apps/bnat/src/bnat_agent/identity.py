@@ -16,7 +16,7 @@ PRESENTATION = RestaurantPresentation(
         "bnat/bnat_restaurant_menu_url.png"
     ),
     delivery_button_label="Delivery (15% off)",
-    takeaway_button_label="Takeaway (10% off)",
+    takeaway_button_label="Collection (10% off)",
     delivery_promo_caption="Limited Time Offer - 15% off on all delivery orders",
     takeaway_promo_caption="Limited Time Offer - 10% off on all takeaway orders",
     enquiry_menu=EnquiryMenu(

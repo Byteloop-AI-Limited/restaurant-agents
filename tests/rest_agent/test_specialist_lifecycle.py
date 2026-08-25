@@ -42,6 +42,15 @@ def test_retained_state_is_fail_closed_even_without_a_specialist_owner():
     assert SpecialistFlowView.from_state({"retain_thread": True}).owns_specialist_work
 
 
+def test_retained_flow_instruction_prohibits_menu_sends_and_new_orders():
+    instruction = SpecialistFlowView.from_state(
+        {"active_agent": "takeaway_agent", "retain_thread": True}
+    ).system_instruction()
+
+    assert "Do not call a menu tool" in instruction
+    assert "start another order" in instruction
+
+
 def test_paid_delivery_state_resets_stale_rider_facts_and_explains_pending_allocation():
     state = retained_specialist_state(
         "delivery", order_id="ORD-1", order_number="SFCS-1", reply_to_msg_id="wamid"
@@ -110,6 +119,8 @@ async def test_terminal_completion_releases_before_triage_termination():
         "active_agent": "triage_agent",
         "retain_thread": False,
     }
+    assert "do not call a menu tool" in calls[0].kwargs["system_msg"].lower()
+    assert "do not transfer" in calls[2].kwargs["system_msg"].lower()
 
 
 @pytest.mark.asyncio

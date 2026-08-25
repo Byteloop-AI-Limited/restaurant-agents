@@ -222,7 +222,9 @@ async def route_tool_service_selection(
                     tool_call_id=tool_call_id,
                 ),
                 AIMessage(
-                    "/DoNotRespond: Please select items from the menu to place your order."
+                    "/DoNotRespond: The takeaway menu was successfully sent to the "
+                    "customer. Wait for them to place the order. Do not send another menu "
+                    "unless they explicitly request one and no retained order is active."
                 ),
             ],
         },
@@ -341,14 +343,29 @@ async def route_service_selection(
         ),
     )
     marker = {
-        "sent": "/DoNotRespond: Please select items from the menu to place your order.",
-        "closed": "/DoNotRespond: Ordering is currently closed.",
-        "failed": "/DoNotRespond: The collection menu could not be sent.",
+        "sent": (
+            "/DoNotRespond: The takeaway menu was successfully sent to the customer. "
+            "Wait for them to place the order. Do not send another menu unless they "
+            "explicitly request one and no retained order is active."
+        ),
+        "closed": "/DoNotRespond: Takeaway ordering is currently closed. No menu was sent.",
+        "failed": (
+            "/DoNotRespond: The takeaway menu could not be sent. The customer was asked "
+            "to try again later."
+        ),
     }[result]
-    await graph_adapter.run_rest_graph_with_custom_msg(
-        recipient=recipient,
-        pool=pool,
-        config=config,
-        msgs=[AIMessage(marker)],
-        persist_only=True,
-    )
+    try:
+        await graph_adapter.run_rest_graph_with_custom_msg(
+            recipient=recipient,
+            pool=pool,
+            config=config,
+            msgs=[AIMessage(marker)],
+            persist_only=True,
+        )
+    except Exception:
+        # The customer-facing send has already succeeded or failed above. Do not
+        # retry it merely because its transcript record could not be persisted.
+        logger.exception(
+            "Could not persist deterministic takeaway menu outcome for recipient {}",
+            recipient,
+        )
