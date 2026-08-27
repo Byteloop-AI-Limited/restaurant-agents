@@ -136,16 +136,14 @@ are complete. The following work is intentionally deferred.
   between the button (15%) and the caption sent moments later (20%).
   Resolved 2026-08-17: set BNAT's captions to match its existing buttons
   (15% delivery / 10% takeaway), confirmed by the owner.
-- [ ] `on_callback_handler.select_service_handler`'s deterministic resend
+- [x] `on_callback_handler.select_service_handler`'s deterministic resend
   branch (`if rest_ref and not active_agent: await select_service_sender(...)`)
-  does not pass `delivery_button_label`/`takeaway_button_label` at all, so
-  it always renders `select_service_wa_send`'s bare "Delivery"/"Takeaway"
-  defaults instead of the app's configured labels (discount suffix
-  included). Found while wiring per-brand button-label resolution
-  (2026-08-17); this callback path predates that work and was not in scope
-  to fix — the other two service-button call sites
-  (`triage._send_service_selection`, `select_restaurant_handler`) do pass
-  it correctly.
+  formerly omitted `delivery_button_label`/`takeaway_button_label`, so it
+  rendered `select_service_wa_send`'s bare defaults instead of the app's
+  configured labels. Resolved 2026-08-26: the resend now passes the app-owned
+  presentation labels and preserves a matching per-brand override when the
+  callback `rest_ref` identifies a configured `RestaurantChoice`, consistent
+  with the other service-button call sites.
 - [x] "Book a table" (ELAS enquiry menu, ADR-0023) was the first enquiry
   option whose fulfilment required a handoff to a different graph node. The
   risk noted here anticipated a *degraded* failure (triage prose-answering

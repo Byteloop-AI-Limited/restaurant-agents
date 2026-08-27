@@ -235,16 +235,23 @@ async def select_service_handler(
         return
 
     if rest_ref and not active_agent:
-        # Only enquiry_button_label is passed here: it has no per-brand
-        # override (unlike delivery/takeaway), so the presentation-level
-        # value is its complete answer. delivery_button_label/
-        # takeaway_button_label are pre-existing gaps on this specific
-        # resend path — see docs/to-do.md — not something to "tidy up" here.
+        selection = runtime.presentation.restaurant_selection
+        choice = selection.choice_for(rest_ref) if selection is not None else None
         await select_service_sender(
             recipient=recipient,
             wa_client=wa,
             rest_ref=rest_ref,
             operational_lookups=runtime.operational_lookups,
+            delivery_button_label=(
+                choice.delivery_button_label
+                if choice is not None and choice.delivery_button_label
+                else runtime.presentation.delivery_button_label
+            ),
+            takeaway_button_label=(
+                choice.takeaway_button_label
+                if choice is not None and choice.takeaway_button_label
+                else runtime.presentation.takeaway_button_label
+            ),
             enquiry_button_label=runtime.presentation.enquiry_button_label,
         )
         return

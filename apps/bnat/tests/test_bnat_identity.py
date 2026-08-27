@@ -16,5 +16,13 @@ def test_bnat_identity_is_app_owned():
         "Parking availability",
         "Subscribe for offers",
     ]
-    assert PRESENTATION.enquiry_button_label == "More options"
-    assert PRESENTATION.takeaway_button_label == "Collection (10% off)"
+    assert PRESENTATION.delivery_button_label == "Delivery (10%)"
+    assert PRESENTATION.takeaway_button_label == "Collection"
+    assert PRESENTATION.enquiry_button_label == "More Options"
+    assert PRESENTATION.delivery_promo_caption == (
+        "Limited-time offer: 10% off delivery orders, or 15% with a valid "
+        "coupon code."
+    )
+    assert PRESENTATION.takeaway_promo_caption == (
+        "Limited-time offer: 5% off collection orders over £25."
+    )

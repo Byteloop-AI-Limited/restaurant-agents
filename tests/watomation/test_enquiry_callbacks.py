@@ -614,7 +614,12 @@ async def test_no_active_agent_resend_passes_operational_lookups_to_the_sender()
     runtime = SimpleNamespace(
         identity=SimpleNamespace(rest_ref="BNAT"),
         operational_lookups=ops,
-        presentation=SimpleNamespace(enquiry_button_label="More options"),
+        presentation=SimpleNamespace(
+            restaurant_selection=None,
+            delivery_button_label="Delivery (10%)",
+            takeaway_button_label="Collection",
+            enquiry_button_label="More Options",
+        ),
     )
     select_service_sender = AsyncMock()
     callback = _callback(
@@ -640,7 +645,9 @@ async def test_no_active_agent_resend_passes_operational_lookups_to_the_sender()
         wa_client=ANY,
         rest_ref="bnat",
         operational_lookups=ops,
-        enquiry_button_label="More options",
+        delivery_button_label="Delivery (10%)",
+        takeaway_button_label="Collection",
+        enquiry_button_label="More Options",
     )
     graph_adapter.run_rest_graph_with_custom_msg.assert_not_awaited()
 
