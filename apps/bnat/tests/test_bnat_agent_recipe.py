@@ -31,6 +31,27 @@ def test_bnat_prompts_require_eager_purpose_built_tool_use():
     assert "**EAGER TOOL USE:**" in (prompt_dir / "takeaway_agent_prompt.md").read_text()
 
 
+def test_bnat_prompts_include_current_restaurant_facts_and_offer_policy():
+    prompt_dir = Path(__file__).resolve().parents[1] / "src/bnat_agent/rest_agent/prompts"
+    prompts = [
+        (prompt_dir / filename).read_text()
+        for filename in (
+            "triage_agent_prompt.md",
+            "delivery_multiagent_prompt.md",
+            "takeaway_agent_prompt.md",
+        )
+    ]
+
+    for prompt in prompts:
+        assert "{venue_hours}" in prompt
+        assert "100% halal certified" in prompt
+        assert "minimum order value for delivery is £25" in prompt
+        assert "delivery orders receive 10% off" in prompt
+        assert "15% total with a valid delivery coupon code" in prompt
+        assert "collection orders over £25 receive 5% off" in prompt
+        assert "WhatsApp and Facebook" in prompt
+
+
 def test_bnat_recipe_binds_its_prompts_and_exact_runtime(monkeypatch):
     class FakeRestaurantGraphAdapter:
         def __init__(self, runtime, *, prompts):
