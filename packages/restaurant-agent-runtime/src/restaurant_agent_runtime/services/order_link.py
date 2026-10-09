@@ -20,7 +20,7 @@ async def fetch_order_page_link(
 ) -> str | None:
     """Return the https order-page URL for a paid WhatsApp order, or None."""
     try:
-        key = getattr(runtime.settings.project, "ordelo_web_key", "") or ""
+        key = getattr(runtime.settings.ordelo, "web_key", "") or ""
         if len(key) < MIN_KEY_LENGTH:
             return None
         base = runtime.operational_lookups.get_app_url("ORDELO").rstrip("/")

@@ -8,6 +8,7 @@ from restaurant_agent_runtime.utils.aws_setting import (
 
 from .google_setting import GoogleSettings
 from .llm_setting import LLMSettings
+from .ordelo_setting import OrdeloSetting
 from .pg_setting import PgSetting
 from .project_setting import ProjectSetting
 from .stripe_setting import StripeSetting
@@ -36,4 +37,5 @@ def load_settings_bundle(identity: RestaurantIdentity) -> RestaurantSettingsBund
         payment=StripeSetting(**env_values),
         maps=GoogleSettings(**env_values),
         waba=WabaBusinessSettings.for_namespace(identity.waba_namespace, env_values),
+        ordelo=OrdeloSetting(**env_values),
     )

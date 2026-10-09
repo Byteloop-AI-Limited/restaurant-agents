@@ -44,7 +44,7 @@ def _runtime():
     return SimpleNamespace(
         identity=SimpleNamespace(matches=lambda value: value == "ELAS"),
         settings=SimpleNamespace(
-            database_client=object(), project=SimpleNamespace(ordelo_web_key=KEY)
+            database_client=object(), ordelo=SimpleNamespace(web_key=KEY)
         ),
         async_wa_client=wa_client,
         operational_lookups=SimpleNamespace(
@@ -139,7 +139,7 @@ async def test_fetch_makes_no_call_without_a_usable_key(monkeypatch, key):
 
     _client(monkeypatch, boom)
     runtime = _runtime()
-    runtime.settings.project.ordelo_web_key = key
+    runtime.settings.ordelo.web_key = key
     assert await order_link.fetch_order_page_link(runtime, "ELAS-ABCD-10", "44700") is None
 
 
@@ -182,3 +182,13 @@ async def test_fetch_timeout_returns_none_and_logs_no_link(monkeypatch):
     )
     assert await order_link.fetch_order_page_link(_runtime(), "ELAS-ABCD-10", "44700") is None
     assert logged and all("/o/" not in line and KEY not in line for line in logged)
+
+
+async def test_fetch_makes_no_call_when_bundle_has_no_ordelo_settings(monkeypatch):
+    def boom(request):
+        raise AssertionError("no HTTP call expected")
+
+    _client(monkeypatch, boom)
+    runtime = _runtime()
+    runtime.settings.ordelo = None
+    assert await order_link.fetch_order_page_link(runtime, "ELAS-ABCD-10", "44700") is None

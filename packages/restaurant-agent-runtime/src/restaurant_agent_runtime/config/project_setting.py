@@ -15,8 +15,6 @@ def get_project_root():
 class ProjectSetting(BaseSettings):
     salt: str = Field(..., alias="project_settings_salt")
     rest_ref: str = Field(..., alias="project_settings_rest_ref")
-    # Shared with OrdeloAgent's ORDELO_WEB_KEY. Empty turns the receipt order-link off.
-    ordelo_web_key: str = Field("", alias="ordelo_web_key")
 
     @property
     def project_root(self) -> str:
