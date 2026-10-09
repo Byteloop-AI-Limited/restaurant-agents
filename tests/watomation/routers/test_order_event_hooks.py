@@ -6,8 +6,8 @@ Payment receipt carries the customer's private order-page link
   Functions/Classes:
     . _runtime
     . _order
-    . test_receipt_ends_with_track_line
-    . test_receipt_unchanged_when_no_link
+    . test_receipt_has_order_tracking_button
+    . test_receipt_has_no_button_when_no_link
     . test_replayed_delivery_event_fetches_nothing
     . test_fetch_*
 """
@@ -88,21 +88,24 @@ async def _pay(action, adapter):
 
 
 @pytest.mark.parametrize("action", ["delivery", "takeaway"])
-async def test_receipt_ends_with_track_line(monkeypatch, action):
+async def test_receipt_has_order_tracking_button(monkeypatch, action):
     fetch, adapter = _patch(monkeypatch, URL)
     send = await _pay(action, adapter)
     fetch.assert_awaited_once()
     assert fetch.await_args.args[1:] == ("ELAS-ABCD-10", "447000000010")
-    text = send.await_args.kwargs["text"]
-    assert text.rstrip().endswith(f"Track your order: {URL}")
-    assert "Receipt Body" in text
+    kwargs = send.await_args.kwargs
+    assert kwargs["buttons"].title == "Order Tracking"
+    assert kwargs["buttons"].url == URL
+    assert "Receipt Body" in kwargs["text"]
+    assert URL not in kwargs["text"]  # the link lives only in the button
 
 
 @pytest.mark.parametrize("action", ["delivery", "takeaway"])
-async def test_receipt_unchanged_when_no_link(monkeypatch, action):
+async def test_receipt_has_no_button_when_no_link(monkeypatch, action):
     _, adapter = _patch(monkeypatch, None)
     send = await _pay(action, adapter)
     send.assert_awaited_once()
+    assert "buttons" not in send.await_args.kwargs
     assert "Track your order" not in send.await_args.kwargs["text"]
 
 
