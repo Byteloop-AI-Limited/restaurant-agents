@@ -33,6 +33,7 @@ guides are secondary views.
 
 ## Feature Guides
 
+- [Onboarding a new Fly app](onboarding-new-fly-app.md)
 - [Shared multi-agent orchestration](multi_agent_system.md)
 - [Delivery Agent](delivery_whatsapp_agent.md)
 - [Takeaway Agent](takeaway_whatsapp_agent.md)

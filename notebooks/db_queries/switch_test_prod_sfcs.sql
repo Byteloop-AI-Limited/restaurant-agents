@@ -2,9 +2,9 @@
 -- SFCS: Verification Queries
 -- ============================================================
 
-select admins, city, * from restaurant_master where rest_ref = 'SFCS';
+select admins, city, * from restaurant_master; 
 
-select * from ordelo_config where config_key like '%SFCS_APP_URL';
+select * from ordelo_config where config_key like '%_APP_URL';
 
 select * from rider_master where rider_name in ('Lohith', 'Rahul', 'Bloop');
 select * from rider_master where is_in_shift = true;
@@ -19,7 +19,7 @@ set admins = Array['447919202938'],
     city='dummy',
     service_hours_json = '{
   "mon": [["18:00", "24:00"]],
-  "tue": [["18:00", "24:00"]],
+  "tue": [["00:00", "24:00"]],
   "wed": [["18:00", "24:00"]],
   "thu": [["18:00", "24:00"]],
   "fri": [["18:00", "24:00"]],
@@ -77,6 +77,23 @@ set admins = Array[ '447446933210','447919202938','447827180109', '447769081769'
   "fri": [["11:30", "14:00"], ["16:00", "24:00"]],
   "sat": [["11:30", "14:00"], ["16:00", "24:00"]],
   "sun": [["11:30", "14:00"], ["16:00", "23:00"]]
+}'::jsonb
+where rest_ref = 'SFCS';
+
+
+-- ## urgent closure;
+update restaurant_master
+set admins = Array[ '447446933210','447919202938','447827180109', '447769081769', '447312083527'],
+    rest_stale_active_threads_minutes = 10,
+    city='Salisbury',
+    service_hours_json = '{
+  "mon": [["14:00", "14:00"], ["23:00", "23:00"]],
+  "tue": [["14:00", "14:00"], ["23:00", "23:00"]],
+  "wed": [["14:00", "14:00"], ["23:00", "23:00"]],
+  "thu": [["14:00", "14:00"], ["23:00", "23:00"]],
+  "fri": [["14:00", "14:00"], ["23:00", "24:00"]],
+  "sat": [["14:00", "14:00"], ["23:00", "24:00"]],
+  "sun": [["14:00", "14:00"], ["23:00", "23:00"]]
 }'::jsonb
 where rest_ref = 'SFCS';
 

@@ -1,5 +1,9 @@
 # ELAS manual deployment
 
+For the first deployment when no Fly app or Machines exist yet, follow
+[Onboarding a new Fly app](../../docs/onboarding-new-fly-app.md) for app
+creation, bootstrap secrets, verification, and cutover sequencing.
+
 From the workspace root:
 
 ```bash
