@@ -1,6 +1,7 @@
 -- ============================================================
 -- ELAS: Verification Queries
 -- ============================================================
+select admins, city, * from restaurant_master; 
 
 select admins, city, restaurant_start_time, * from restaurant_master where rest_ref in ('ELAS', 'CHKS');
 
@@ -18,17 +19,22 @@ set admins = Array['447919202938'],
     rest_stale_active_threads_minutes = 10,
     restaurant_start_time = 11,
     service_hours_json = '{
-  "mon": [["18:00", "24:00"]],
-  "tue": [["18:00", "24:00"]],
-  "wed": [["18:00", "24:00"]],
-  "thu": [["18:00", "24:00"]],
+  "mon": [["09:00", "24:00"]],
+  "tue": [["00:00", "24:00"]],
+  "wed": [["00:00", "24:00"]],
+  "thu": [["00:00", "24:00"]],
   "fri": [["00:00", "24:00"]],
-  "sat": [["18:00", "25:00"]],
-  "sun": [["18:00", "21:00"]]
+  "sat": [["00:00", "25:00"]],
+  "sun": [["00:00", "21:00"]]
 }'::jsonb,
     restaurant_end_time = 24,
     city='dummy'
 where rest_ref in ('ELAS', 'CHKS');
+
+update elas_menu
+set title = 'TEST3100'
+where title='Naan';
+
 
 update rider_master
 set is_in_shift = true,
@@ -59,7 +65,7 @@ where rider_name in ('Bloop');
 --  447770114931 - Raj
 --  447424792533 - Muthukumaran
 update restaurant_master
-set admins = Array['447448440754', '447446933210','447901518136','447914844933', '447770114931', '447424792533'],
+set admins = Array['447448440754', '447446933210','447901518136','447914844933', '447770114931', '447917912646'],
     rest_stale_active_threads_minutes = 10,
     city='Salisbury',
     service_hours_json = '{
@@ -73,6 +79,23 @@ set admins = Array['447448440754', '447446933210','447901518136','447914844933',
     }'::jsonb
 where rest_ref in ('ELAS', 'CHKS');
 
+
+-- ## urgent closure;
+update restaurant_master
+set admins = Array['447448440754', '447446933210','447901518136','447914844933', '447770114931', '447917912646'],
+    rest_stale_active_threads_minutes = 10,
+    city='Salisbury',
+    service_hours_json = '{
+        "mon": [["21:00", "22:00"]],
+        "tue": [["21:00", "22:00"]],
+        "wed": [["21:00", "22:00"]],
+        "thu": [["21:00", "22:00"]],
+        "fri": [["12:00", "22:00"]],
+        "sat": [["21:00", "22:00"]],
+        "sun": [["21:00", "21:00"]]
+    }'::jsonb
+where rest_ref in ('ELAS', 'CHKS');
+
 update rider_master
 set is_in_shift = true,
     town = 'Salisbury',
@@ -81,8 +104,15 @@ where rider_name = 'Lohith';
 
 update ordelo_config set config_value = 'https://elas-agg.ordelo.app' where config_key = 'ELAS_APP_URL';
 
+update elas_menu
+set title = 'Naan'
+where title='TEST3100';
+
 -- Cache reset calls, Should be run everytime after changing the app URL
 SELECT * FROM ordelo_post('ELAS_APP_URL', '/restaurant-base-url-cache/reset', 'rest_ref=ELAS');
 SELECT * FROM ordelo_post('ORDELO_APP_URL', '/restaurant-base-url-cache/reset', 'rest_ref=ELAS');
 SELECT * FROM ordelo_post('ELAS_APP_URL', '/restaurant-master-cache/reset',   'rest_ref=ELAS');
 
+-- menu update
+
+-- select * from  elas_menu;

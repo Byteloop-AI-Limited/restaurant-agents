@@ -10,8 +10,10 @@ from zoneinfo import ZoneInfo
 UK_TZ = ZoneInfo("Europe/London")
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from pywa.types import ButtonUrl
 from restaurant_agent_runtime.config import logger
 from restaurant_agent_runtime.runtime import GraphAdapter, RestaurantRuntime
+from restaurant_agent_runtime.services.order_link import fetch_order_page_link
 from restaurant_agent_runtime.services.order_management.food_order_pymodel import FoodOrder
 from restaurant_agent_runtime.services.order_management.food_order_reciept import (
     build_wa_order_reciept_for_cust,
@@ -226,6 +228,17 @@ async def payment_complete(
         database_client=runtime.settings.database_client,
     )
 
+    # Best effort, 2 s cap: the receipt always goes out, with or without the link.
+    order_link = await fetch_order_page_link(
+        runtime, food_order.order_number, recipient
+    )
+    # A tappable "Order Tracking" button on the receipt itself; no button when there is no link.
+    track_buttons = (
+        {"buttons": ButtonUrl(title="Order Tracking", url=order_link)}
+        if order_link
+        else {}
+    )
+
     formatted_wa_text = f"""
     Thank you for the payment.\n
     Your order id is *{food_order.order_id}*.\n
@@ -245,6 +258,7 @@ async def payment_complete(
             to=recipient,
             # header=customer_receipt_header,
             text=formatted_wa_text,
+            **track_buttons,
         )
         background_tasks.add_task(
             run_background_task,
@@ -276,6 +290,7 @@ async def payment_complete(
             to=recipient,
             header=customer_receipt_header,
             text=formatted_wa_text,
+            **track_buttons,
         )
 
         # Collection order received, wait for pickup time confirmation

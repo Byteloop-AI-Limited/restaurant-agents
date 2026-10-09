@@ -32,6 +32,7 @@ def _secret_values():
         "bnat_waa_app_secret": "bnat-secret",
         "bnat_waa_private_key_password": "password",
         "sfcs_waa_account_id": "sfcs-account",
+        "ordelo_web_key": "w" * 40,
     }
 
 
@@ -59,3 +60,4 @@ def test_load_settings_bundle_fetches_once_and_selects_exact_namespace(monkeypat
     assert settings.database_client is database_client
     assert settings.waba.waa_account_id == "bnat-account"
     assert settings.waba.waa_app_id == "bnat-app"
+    assert settings.ordelo.web_key == "w" * 40

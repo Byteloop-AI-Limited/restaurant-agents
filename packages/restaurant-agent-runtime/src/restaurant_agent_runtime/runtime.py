@@ -262,6 +262,7 @@ class RestaurantSettingsBundle:
     payment: Any
     maps: Any
     waba: Any
+    ordelo: Any = None  # OrdeloSetting; None in tests that don't need it
 
 
 @dataclass(frozen=True, slots=True)

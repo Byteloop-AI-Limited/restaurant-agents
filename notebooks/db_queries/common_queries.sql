@@ -41,3 +41,4 @@ SELECT dtts, *
 FROM delivery_summary 
 WHERE order_number='BNAT-EEMF-24';
 
+select * from restaurant_master where rest_ref='ELAS';
