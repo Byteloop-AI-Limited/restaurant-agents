@@ -168,6 +168,57 @@ are complete. The following work is intentionally deferred.
 The detailed rationale and source references remain in
 `docs/architecture/shared-agent-runtime-decisions.md`.
 
+## Remove leftover restaurant-admin code (owner: Lohith; added 15 Oct 2026)
+
+This runtime does not talk to restaurant admins. OrdeloAgent owns every
+restaurant-facing message and button (WhatsApp from Ordelo's own number, and now
+Telegram; see OrdeloAgent `plans/telegram-rest-admin-scaffold-plan.md`, phases 7-8).
+The code below is left over from before that split. Remove it once the checks
+below pass. Nothing here is urgent and nothing has been removed yet.
+
+Candidates to remove:
+
+- [ ] `watomation/on_callback_handler.py` `admin_collection_ready`, its
+  `bound_collection_ready` wrapper and the `/AdminCollectionReady`
+  `CallbackButtonHandler` in `web/app_factory.py` (import at line ~63, wrapper
+  ~136, registration ~216), and the test
+  `tests/legacy_contract/watomation/test_on_callback_handler.py::test_admin_collection_ready_posts_to_ordelo`.
+  The button is created by OrdeloAgent `wa_senders.admin_order_reciept` and
+  sent from Ordelo's WhatsApp number, so taps land on OrdeloAgent's own
+  `on_callback_wa_handler.admin_collection_ready`, not here.
+- [ ] `watomation/on_admin_message.py`, the whole module
+  (`handle_wa_msg_in_admin_graph`, `handle_admin_order`,
+  `handle_admin_referred_product`, `reset_thread_admin`). None of them is
+  registered in `web/app_factory.py`; only
+  `tests/legacy_contract/watomation/test_on_admin_message.py` imports them.
+- [ ] `watomation/on_callback_handler.py` `restaurant_order_confirmation_handler`
+  (an accept/decline stub that does nothing), its `/RestaurantOrder`
+  registration in `web/app_factory.py` (~220) and the test
+  `test_restaurant_order_confirmation_handler_accept_decline`.
+- [ ] `services/wa_templates/restaurant_confirmation_template.py`
+  (`send_restaurant_order_confirmation`, `send_restaurant_pickup_time_confirmation`).
+  They are never called; OrdeloAgent sends the confirmation and pickup prompts.
+- [ ] `watomation/routers/thread_hooks.py` `debug_admin_state_path`
+  (`GET /debug-admin-state`, which defaults to a real phone number). It is a
+  generic graph debug endpoint: remove it, or rename it and drop the default.
+
+Keep: `RestaurantMaster.admins` and the takeaway payload fields
+(`restaurant_admin`, `admins`, `admin_id`), which parse payloads OrdeloAgent
+sends; `waba_callback._restaurant_master_details` (read-only diagnostics);
+`OrdeloService` feedback scheduling (it asks Ordelo to notify the admins).
+
+Checks before removing (so nothing is affected):
+
+- [ ] Confirm that no restaurant app's WABA phone number or callback URL is
+  Ordelo's number (`/waba-callback` diagnostics, `waa_callback_url`), so no
+  `/AdminCollectionReady` or `/RestaurantOrder-*` tap can arrive here.
+- [ ] Search production logs for `/AdminCollectionReady` and
+  `Restaurant order confirmation:` in SFCS/BNAT over the last 30 days; expect zero.
+- [ ] After removal, OrdeloAgent `/delivery-hooks/notify-food-ready-for-pickup`
+  has no caller. Decide there whether to keep it (manual/ops use) or remove it.
+- [ ] Update `docs/glossary.md`, the domain model `code-ref` blocks and the
+  feature guides that mention these handlers in the same change.
+
 <!-- Lohith's list -->
 /order-event-hooks.py/takeaway_pickup_time_updated
 I need to update retian_thread to false after this;
