@@ -2,7 +2,8 @@
 
 ``PgSetting`` owns lazy client and connection-pool construction. Instances are
 created by ``load_settings_bundle``; this module does not load AWS settings or
-publish process-global database clients.
+publish process-global database clients. Server clients use the service key;
+private shared order tables are not accessible using browser credentials.
 """
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -59,17 +60,15 @@ class PgSetting(BaseSettings):
     @property
     def headers(self):
         return {
-            # "Authorization": f"Bearer {self.rest_key}",
             "apiKey": self.service_key,
             "Accept": "application/json",
-            "Authorization": f"Bearer {self.rest_key}",
+            "Authorization": f"Bearer {self.service_key}",
             "Content-Type": "application/json",
         }
 
     @property
     def service_headers(self):
         return {
-            # "Authorization": f"Bearer {self.rest_key}",
             "apiKey": self.service_key,
             "Accept": "application/json",
             "Content-Type": "application/json",
@@ -85,19 +84,19 @@ class PgSetting(BaseSettings):
 
     @property
     def client(self) -> Client:
-        if not self.rest_url or not self.rest_key:
+        if not self.rest_url or not self.service_key:
             raise ValueError(
-                "Both rest_url and rest_key must be provided for Supabase client"
+                "Both rest_url and service_key must be provided for Supabase client"
             )
-        return create_client(self.rest_url, self.rest_key)
+        return create_client(self.rest_url, self.service_key)
 
     @property
     def async_client(self) -> AsyncClient:
-        if not self.rest_url or not self.rest_key:
+        if not self.rest_url or not self.service_key:
             raise ValueError(
-                "Both rest_url and rest_key must be provided for Supabase async client"
+                "Both rest_url and service_key must be provided for Supabase async client"
             )
-        return create_async_client(self.rest_url, self.rest_key)
+        return create_async_client(self.rest_url, self.service_key)
 
     async def get_pool(self) -> AsyncConnectionPool:
         # If pool doesn't exist, or if it exists but was closed

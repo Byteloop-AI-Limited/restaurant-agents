@@ -61,3 +61,19 @@ def test_load_settings_bundle_fetches_once_and_selects_exact_namespace(monkeypat
     assert settings.waba.waa_account_id == "bnat-account"
     assert settings.waba.waa_app_id == "bnat-app"
     assert settings.ordelo.web_key == "w" * 40
+
+
+def test_server_database_clients_use_service_credentials(monkeypatch):
+    from restaurant_agent_runtime.config import pg_setting
+
+    calls = []
+    def client(url, key):
+        calls.append((url, key))
+        return object()
+    monkeypatch.setattr(pg_setting, "create_client", client)
+    monkeypatch.setattr(pg_setting, "create_async_client", client)
+    settings = pg_setting.PgSetting(**_secret_values())
+    assert settings.client is not None
+    assert settings.async_client is not None
+    assert calls == [("https://example.supabase.co", "service-key")] * 2
+    assert settings.headers["Authorization"] == "Bearer service-key"
