@@ -4,6 +4,7 @@
 
 select admins, city, * from restaurant_master; 
 select admins, city, * from restaurant_master where rest_ref in ('SFCS'); 
+select * from sfcs_menu where title='TEST3101' and sku='test_3101';
 
 select * from ordelo_config where config_key like '%SFCS_APP_URL';
 
@@ -30,7 +31,7 @@ BEGIN
     WHERE rest_ref = 'SFCS';
 
     UPDATE sfcs_menu
-    SET title = 'TEST 3101',
+    SET title = 'TEST3100',
         description = 'Test item',
         availability = 'in stock',
         price = 10.00,
@@ -44,11 +45,11 @@ BEGIN
 
     IF NOT FOUND THEN
         INSERT INTO sfcs_menu (
-            title, sku, description, availability, price, currency,
+            title, sku, description, availability, price, curency,
             branch_link, image_link, branch_name, category, addons
         )
         VALUES (
-            'TEST 3101', 'test_3101', 'Test item', 'in stock', 10.00, 'GBP',
+            'TESTT3100', 'test_3100', 'Test item', 'in stock', 10.00, 'GBP',
             'https://sfc-salisbury.co.uk',
             'https://ordelo-restaurants.s3.eu-west-2.amazonaws.com/sfcs/Triple+Mixed+Bucket.jpg',
             'Salisbury', 'Bucket Meal', '{}'::jsonb
@@ -102,7 +103,7 @@ BEGIN
     WHERE rest_ref = 'SFCS';
 
     DELETE FROM sfcs_menu
-    WHERE title = 'TEST 3101' AND sku = 'test_3101';
+    WHERE title = 'TEST3101' AND sku = 'test_3101';
 
     UPDATE rider_master
     SET is_in_shift = true,

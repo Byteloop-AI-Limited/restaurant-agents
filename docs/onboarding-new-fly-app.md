@@ -204,6 +204,31 @@ A successful health check proves the app responds, but does not validate an
 end-to-end WhatsApp conversation or an order/payment flow. Live probes require
 separate authorization and a bounded test configuration.
 
+### Optional: idle suspend
+
+To have the Machine suspended after an hour with no work, add the app to the
+`fly_config` table in Supabase. The OrdeloAgent job `fly_idle_suspend()` checks
+every app listed there every 10 minutes using this app's
+`GET /internal/activity` (see [webhook endpoints](webhook_endpoints.md),
+"Activity Endpoint"). Full instructions are in OrdeloAgent
+`docs/fly.io-deploy-guide.md` §10, in short:
+
+```bash
+fly tokens create deploy -a elas-agent --name scheduled-machine-control --expiry 8760h
+fly machine list -a elas-agent    # note the Machine ID
+```
+
+```sql
+INSERT INTO fly_config (app_name, machine_id, region, api_token, description)
+VALUES ('elas-agent', '<MACHINE_ID>', 'lhr', '<TOKEN>', 'idle suspend');
+SELECT fly_idle_suspend(p_dry_run := true);   -- expect a result for elas-agent
+```
+
+Keep `auto_start_machines = true` in `fly.toml` so inbound webhooks wake the
+Machine. Suspend needs at most 2 GB RAM and no swap; if the Machine is larger, it
+must be stopped instead. A redeploy that replaces the Machine needs its
+`machine_id` updated in `fly_config`.
+
 ## 7. Cut ELAS over from legacy Elai
 
 Record the previous Ordelo URL and effective Meta callback before changing

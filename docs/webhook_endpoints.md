@@ -208,6 +208,44 @@ polling do not reset idle time. `safe_to_stop` also requires the configured
 idle threshold, and the external scheduler should require two consecutive safe
 responses before stopping a Machine.
 
+### Who consumes it: idle suspend (Fly)
+
+The production consumer is the Supabase function `fly_idle_suspend()` in the
+OrdeloAgent repo (`ordelo_datamodels/platform/fly_config.sql`; operator guide
+in OrdeloAgent `docs/fly.io-deploy-guide.md` §10g). A `pg_cron` job runs it
+every 10 minutes. For each app in the `fly_config` table (`sfcs-agent`,
+`bnat-agent`, ...) it:
+
+1. Asks the Fly Machines API for the Machine's state and skips the app unless
+   it is `started`. A request to this endpoint on a suspended Machine would
+   wake it, because `auto_start_machines = true` in `apps/*/fly.toml`.
+2. Calls `GET https://<app>.fly.dev/internal/activity`.
+3. Suspends the Machine (`POST .../machines/<id>/suspend`) when all three
+   counters are 0, `draining` is false and `idle_seconds >= 3600`. It applies
+   its own one-hour threshold and does not use `safe_to_stop` or
+   `ACTIVITY_IDLE_THRESHOLD_SECONDS`.
+
+What this means for code in this repo:
+
+- **Anything that runs work must be counted.** Requests are counted by the
+  middleware and background work by `run_background_task`
+  (`watomation/background_task_runner.py`); agent runs are counted
+  separately. Work started outside these paths (a bare `asyncio.create_task`,
+  an in-process timer or sleep) is invisible here, so the Machine can be
+  suspended while it is pending. Route new background work through
+  `run_background_task`.
+- **Do not add polling paths to tracking.** `/healthz` and `/internal/activity`
+  are in `UNTRACKED_PATHS`; if they were counted, `idle_seconds` would never
+  reach the threshold.
+- **The idle clock is per process.** It starts from 0 when the process starts
+  or resumes, so a woken Machine needs a full idle hour before it is suspended
+  again.
+- **Waking is automatic.** The next inbound webhook resumes the Machine through
+  Fly's proxy. A resume normally takes a second or two; a fallback cold boot
+  takes longer, and Meta retries a webhook that fails.
+- **New apps** need a `fly_config` row before they are suspended (see
+  `docs/onboarding-new-fly-app.md`, "Optional: idle suspend").
+
 ## Code References (Machine-Readable)
 
 ```code-ref
